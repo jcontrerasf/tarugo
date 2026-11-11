@@ -598,7 +598,11 @@ mod tests {
         screw_frame(&mut doc, &f, 2);
         let s = solve(&doc);
         // Pull the top 50 up: it touches nothing and its screws are left hanging.
-        crate::edit::translate(&mut doc, &s, f.top, 1, 50.0, None);
+        let _ = s;
+        doc.part_mut(f.top).unwrap().axes[1] = crate::model::Extent::Thick {
+            anchor: crate::model::End::abs(650.0),
+            align: Side::Max,
+        };
         let s = solve(&doc);
         let issues = check_fastening(&doc, &s);
         assert!(issues.contains(&Issue::Floating(f.top)));

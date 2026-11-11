@@ -27,18 +27,99 @@ impl Solved {
     }
 }
 
-/// Moves an end by `delta`: an absolute end becomes a number; one that refers to another
-/// part keeps the reference and changes its offset.
-fn shift_end(end: &mut End, solved: &Solved, axis: usize, delta: f64) {
-    let Some(now) = solved.end_value(end, axis) else {
+/// Which end of an extent.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Slot {
+    Lo,
+    Hi,
+    Anchor,
+}
+
+/// The end of an extent in a slot, if it has it.
+pub fn end_mut(extent: &mut Extent, slot: Slot) -> Option<&mut End> {
+    match (extent, slot) {
+        (Extent::Span { lo, .. }, Slot::Lo) => Some(lo),
+        (Extent::Span { hi, .. }, Slot::Hi) => Some(hi),
+        (Extent::Thick { anchor, .. }, Slot::Anchor) => Some(anchor),
+        _ => None,
+    }
+}
+
+/// The end of an extent in a slot, if it has it.
+pub fn end_ref(extent: &Extent, slot: Slot) -> Option<&End> {
+    match (extent, slot) {
+        (Extent::Span { lo, .. }, Slot::Lo) => Some(lo),
+        (Extent::Span { hi, .. }, Slot::Hi) => Some(hi),
+        (Extent::Thick { anchor, .. }, Slot::Anchor) => Some(anchor),
+        _ => None,
+    }
+}
+
+/// The name of the parameter an end is exactly equal to, if that parameter is a plain
+/// number: moving such an end changes the parameter (and all that follows it).
+fn bound_param(doc: &Document, end: &End) -> Option<String> {
+    let End::Abs { value } = end else {
+        return None;
+    };
+    let name = value.0.trim();
+    let param = doc.param(name)?;
+    (!param.value.is_formula()).then(|| name.to_string())
+}
+
+/// Moves an end by `delta`. An end equal to a parameter changes the parameter (if
+/// `via_params`); another absolute end becomes a number; one that refers to another part
+/// keeps the reference and changes its offset.
+fn shift_end(
+    doc: &mut Document,
+    solved: &Solved,
+    part: PartId,
+    axis: usize,
+    slot: Slot,
+    delta: f64,
+    via_params: bool,
+) {
+    let Some(end) = doc
+        .part(part)
+        .and_then(|p| end_ref(&p.axes[axis], slot))
+        .cloned()
+    else {
         return;
     };
-    match end {
-        End::Abs { value } => *value = Dim::num(now + delta),
-        End::Ref { offset, .. } | End::Between { offset, .. } => {
-            let o = solved.eval(offset).unwrap_or(0.0);
-            *offset = Dim::num(o + delta);
-        }
+    let Some(now) = solved.end_value(&end, axis) else {
+        return;
+    };
+    if via_params && let Some(name) = bound_param(doc, &end) {
+        doc.set_param(&name, Dim::num(now + delta));
+        return;
+    }
+    let new_end = match end {
+        End::Abs { .. } => End::abs(now + delta),
+        End::Ref { face, offset } => End::Ref {
+            face,
+            offset: Dim::num(solved.eval(&offset).unwrap_or(0.0) + delta),
+        },
+        End::Between {
+            lo,
+            hi,
+            frac,
+            offset,
+        } => End::Between {
+            lo,
+            hi,
+            frac,
+            offset: Dim::num(solved.eval(&offset).unwrap_or(0.0) + delta),
+        },
+    };
+    set_end(doc, part, axis, slot, new_end);
+}
+
+/// Replaces one end of a part.
+pub fn set_end(doc: &mut Document, part: PartId, axis: usize, slot: Slot, end: End) {
+    if let Some(e) = doc
+        .part_mut(part)
+        .and_then(|p| end_mut(&mut p.axes[axis], slot))
+    {
+        *e = end;
     }
 }
 
@@ -47,9 +128,16 @@ pub fn can_refer(doc: &Document, part: PartId, axis: usize, target: PartId) -> b
     part != target && doc.part(target).is_some() && !depends_on(doc, target, axis, part)
 }
 
+fn attached(face: FaceRef) -> End {
+    End::Ref {
+        face,
+        offset: Dim::zero(),
+    }
+}
+
 /// Moves one face (`Side::Min` or `Side::Max`) of a part to `target`. On an axis the
 /// material fixes, the whole part moves. With `snap` the face stays attached to that face
-/// of another part (when that makes no loop).
+/// of another part (when that makes no loop). A face placed by a parameter changes it.
 pub fn move_face(
     doc: &mut Document,
     solved: &Solved,
@@ -63,36 +151,30 @@ pub fn move_face(
         return;
     };
     let snap = snap.filter(|s| can_refer(doc, part, axis, s.part));
-    let inverted_span = solved.inverted.contains(&part);
-    let Some(p) = doc.part_mut(part) else {
+    let Some(is_thick) = doc.part(part).map(|p| p.axes[axis].is_thick()) else {
         return;
     };
     let delta = target - side.of(b.min[axis], b.max[axis]);
-    match &mut p.axes[axis] {
-        Extent::Span { lo, hi } => {
-            // If the ends are crossed, `lo` is the one drawn at the high side.
-            let low_end = (side == Side::Min) != inverted_span;
-            let end = if low_end { lo } else { hi };
-            match snap {
-                Some(face) => {
-                    *end = End::Ref {
-                        face,
-                        offset: Dim::zero(),
-                    }
-                }
-                None => shift_end(end, solved, axis, delta),
-            }
-        }
-        Extent::Thick { anchor, align } => match snap {
+    if is_thick {
+        match snap {
             Some(face) => {
-                *anchor = End::Ref {
-                    face,
-                    offset: Dim::zero(),
-                };
-                *align = side;
+                if let Some(p) = doc.part_mut(part) {
+                    p.axes[axis] = Extent::Thick {
+                        anchor: attached(face),
+                        align: side,
+                    };
+                }
             }
-            None => shift_end(anchor, solved, axis, delta),
-        },
+            None => shift_end(doc, solved, part, axis, Slot::Anchor, delta, true),
+        }
+    } else {
+        // If the ends are crossed, `lo` is the one drawn at the high side.
+        let low_end = (side == Side::Min) != solved.inverted.contains(&part);
+        let slot = if low_end { Slot::Lo } else { Slot::Hi };
+        match snap {
+            Some(face) => set_end(doc, part, axis, slot, attached(face)),
+            None => shift_end(doc, solved, part, axis, slot, delta, true),
+        }
     }
 }
 
@@ -107,35 +189,32 @@ pub fn translate(
     snap: Option<(Side, FaceRef)>,
 ) {
     let snap = snap.filter(|(_, f)| can_refer(doc, part, axis, f.part));
-    let inverted_span = solved.inverted.contains(&part);
-    let Some(p) = doc.part_mut(part) else {
+    let Some(is_thick) = doc.part(part).map(|p| p.axes[axis].is_thick()) else {
         return;
     };
-    match &mut p.axes[axis] {
-        Extent::Span { lo, hi } => {
-            for end in [&mut *lo, &mut *hi] {
-                shift_end(end, solved, axis, delta);
-            }
-            if let Some((side, face)) = snap
-                && side != Side::Center
-            {
-                let low_end = (side == Side::Min) != inverted_span;
-                *(if low_end { lo } else { hi }) = End::Ref {
-                    face,
-                    offset: Dim::zero(),
-                };
-            }
-        }
-        Extent::Thick { anchor, align } => match snap {
+    if is_thick {
+        match snap {
             Some((side, face)) => {
-                *anchor = End::Ref {
-                    face,
-                    offset: Dim::zero(),
-                };
-                *align = side;
+                if let Some(p) = doc.part_mut(part) {
+                    p.axes[axis] = Extent::Thick {
+                        anchor: attached(face),
+                        align: side,
+                    };
+                }
             }
-            None => shift_end(anchor, solved, axis, delta),
-        },
+            None => shift_end(doc, solved, part, axis, Slot::Anchor, delta, true),
+        }
+    } else {
+        // Both ends move: a parameter would drag everything else along, so they detach.
+        shift_end(doc, solved, part, axis, Slot::Lo, delta, false);
+        shift_end(doc, solved, part, axis, Slot::Hi, delta, false);
+        if let Some((side, face)) = snap
+            && side != Side::Center
+        {
+            let low_end = (side == Side::Min) != solved.inverted.contains(&part);
+            let slot = if low_end { Slot::Lo } else { Slot::Hi };
+            set_end(doc, part, axis, slot, attached(face));
+        }
     }
 }
 
@@ -321,6 +400,26 @@ mod tests {
         let s = solve(&doc);
         assert!(s.errors.is_empty());
         assert_eq!(s.boxes[&frame.left].min[0], 50.0);
+    }
+
+    #[test]
+    fn faces_placed_by_a_parameter_change_it() {
+        let (mut doc, frame, shelf) = shelf_doc();
+        let s = solve(&doc);
+        // The right side is anchored at W: dragging it widens the whole furniture.
+        move_face(&mut doc, &s, frame.right, 0, Side::Max, 900.0, None);
+        assert_eq!(doc.param(WIDTH).unwrap().value.0, "900");
+        assert_eq!(solve(&doc).boxes[&shelf].max[0], 882.0);
+        // Stretching the left side up changes H, and the right side with it.
+        let s = solve(&doc);
+        move_face(&mut doc, &s, frame.left, 1, Side::Max, 700.0, None);
+        assert_eq!(solve(&doc).boxes[&frame.right].max[1], 700.0);
+        // Moving the whole left side up does not: it detaches.
+        let s = solve(&doc);
+        translate(&mut doc, &s, frame.left, 1, 10.0, None);
+        let s = solve(&doc);
+        assert_eq!(s.boxes[&frame.left].max[1], 710.0);
+        assert_eq!(s.boxes[&frame.right].max[1], 700.0);
     }
 
     #[test]
