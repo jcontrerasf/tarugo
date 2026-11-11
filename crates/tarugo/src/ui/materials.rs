@@ -42,11 +42,23 @@ impl App {
                     for material in &doc.materials {
                         let mut m = material.clone();
                         let is_main = doc.main_material == m.id;
-                        let star = theme::mini(ui, is_main, icons::MAIN, t().main_material_help);
-                        if star.clicked() && m.is_board() {
+                        let star = ui
+                            .add_enabled(
+                                m.is_board(),
+                                egui::Button::new(
+                                    theme::icon(icons::MAIN, is_main).color(if is_main {
+                                        p.accent
+                                    } else {
+                                        p.text_soft
+                                    }),
+                                )
+                                .frame_when_inactive(false),
+                            )
+                            .on_hover_text(t().main_material_help);
+                        if star.clicked() {
                             main = Some(m.id);
                         }
-                        ui.add(egui::TextEdit::singleline(&mut m.name).desired_width(180.0));
+                        ui.add_sized([200.0, 22.0], egui::TextEdit::singleline(&mut m.name));
                         match &mut m.kind {
                             MaterialKind::Board {
                                 thickness,

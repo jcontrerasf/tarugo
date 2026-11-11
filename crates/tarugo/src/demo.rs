@@ -123,10 +123,12 @@ impl App {
         };
         ctx.request_repaint();
         demo.frame += 1;
-        let busy = !demo.events.is_empty()
-            || demo.frame < demo.resume_at
-            || demo.waiting_shot.load(Ordering::Relaxed);
-        if busy {
+        if !demo.events.is_empty() {
+            // Let the interface react to the last of the input before going on.
+            demo.resume_at = demo.frame + PACE;
+            return;
+        }
+        if demo.frame < demo.resume_at || demo.waiting_shot.load(Ordering::Relaxed) {
             return;
         }
         demo.resume_at = demo.frame + PACE;

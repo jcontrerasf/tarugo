@@ -137,7 +137,10 @@ fn attached(face: FaceRef) -> End {
 
 /// Moves one face (`Side::Min` or `Side::Max`) of a part to `target`. On an axis the
 /// material fixes, the whole part moves. With `snap` the face stays attached to that face
-/// of another part (when that makes no loop). A face placed by a parameter changes it.
+/// of another part (when that makes no loop). With `via_params`, a face placed exactly by
+/// a parameter changes the parameter (and everything else that uses it) instead of
+/// letting go of it.
+#[allow(clippy::too_many_arguments)]
 pub fn move_face(
     doc: &mut Document,
     solved: &Solved,
@@ -146,6 +149,7 @@ pub fn move_face(
     side: Side,
     target: f64,
     snap: Option<FaceRef>,
+    via_params: bool,
 ) {
     let Some(b) = solved.get(part).copied() else {
         return;
@@ -165,7 +169,7 @@ pub fn move_face(
                     };
                 }
             }
-            None => shift_end(doc, solved, part, axis, Slot::Anchor, delta, true),
+            None => shift_end(doc, solved, part, axis, Slot::Anchor, delta, via_params),
         }
     } else {
         // If the ends are crossed, `lo` is the one drawn at the high side.
@@ -173,13 +177,14 @@ pub fn move_face(
         let slot = if low_end { Slot::Lo } else { Slot::Hi };
         match snap {
             Some(face) => set_end(doc, part, axis, slot, attached(face)),
-            None => shift_end(doc, solved, part, axis, slot, delta, true),
+            None => shift_end(doc, solved, part, axis, slot, delta, via_params),
         }
     }
 }
 
 /// Moves the whole part by `delta` along `axis`. With `snap`, its `side` face ends up
-/// attached to that face of another part.
+/// attached to that face of another part. `via_params` as in [`move_face`], for an axis the
+/// material fixes.
 pub fn translate(
     doc: &mut Document,
     solved: &Solved,
@@ -187,6 +192,7 @@ pub fn translate(
     axis: usize,
     delta: f64,
     snap: Option<(Side, FaceRef)>,
+    via_params: bool,
 ) {
     let snap = snap.filter(|(_, f)| can_refer(doc, part, axis, f.part));
     let Some(is_thick) = doc.part(part).map(|p| p.axes[axis].is_thick()) else {
@@ -202,7 +208,7 @@ pub fn translate(
                     };
                 }
             }
-            None => shift_end(doc, solved, part, axis, Slot::Anchor, delta, true),
+            None => shift_end(doc, solved, part, axis, Slot::Anchor, delta, via_params),
         }
     } else {
         // Both ends move: a parameter would drag everything else along, so they detach.
@@ -229,6 +235,7 @@ pub fn set_length(doc: &mut Document, solved: &Solved, part: PartId, axis: usize
             Side::Max,
             b.min[axis] + length,
             None,
+            false,
         );
     }
 }
@@ -355,7 +362,7 @@ mod tests {
         let (mut doc, _, shelf) = shelf_doc();
         let s = solve(&doc);
         // Shorten the shelf 100 from the right; it still follows the right side.
-        move_face(&mut doc, &s, shelf, 0, Side::Max, 682.0, None);
+        move_face(&mut doc, &s, shelf, 0, Side::Max, 682.0, None, true);
         assert_eq!(solve(&doc).boxes[&shelf].max[0], 682.0);
         doc.set_param(WIDTH, Dim::num(1000.0));
         assert_eq!(solve(&doc).boxes[&shelf].max[0], 882.0);
@@ -365,7 +372,7 @@ mod tests {
     fn moving_a_face_of_a_fixed_axis_moves_the_part() {
         let (mut doc, _, shelf) = shelf_doc();
         let s = solve(&doc);
-        move_face(&mut doc, &s, shelf, 1, Side::Max, 400.0, None);
+        move_face(&mut doc, &s, shelf, 1, Side::Max, 400.0, None, true);
         let b = solve(&doc).boxes[&shelf];
         assert_eq!((b.min[1], b.max[1]), (382.0, 400.0));
     }
@@ -379,7 +386,7 @@ mod tests {
             part: frame.left,
             side: Side::Min,
         };
-        move_face(&mut doc, &s, shelf, 0, Side::Min, 0.0, Some(face));
+        move_face(&mut doc, &s, shelf, 0, Side::Min, 0.0, Some(face), true);
         assert_eq!(solve(&doc).boxes[&shelf].min[0], 0.0);
         // The left side cannot hang from the shelf, which hangs from it: plain move.
         let s = solve(&doc);
@@ -396,6 +403,7 @@ mod tests {
             Side::Min,
             50.0,
             Some(loop_face),
+            true,
         );
         let s = solve(&doc);
         assert!(s.errors.is_empty());
@@ -407,16 +415,23 @@ mod tests {
         let (mut doc, frame, shelf) = shelf_doc();
         let s = solve(&doc);
         // The right side is anchored at W: dragging it widens the whole furniture.
-        move_face(&mut doc, &s, frame.right, 0, Side::Max, 900.0, None);
+        move_face(&mut doc, &s, frame.right, 0, Side::Max, 900.0, None, true);
         assert_eq!(doc.param(WIDTH).unwrap().value.0, "900");
         assert_eq!(solve(&doc).boxes[&shelf].max[0], 882.0);
         // Stretching the left side up changes H, and the right side with it.
         let s = solve(&doc);
-        move_face(&mut doc, &s, frame.left, 1, Side::Max, 700.0, None);
+        move_face(&mut doc, &s, frame.left, 1, Side::Max, 700.0, None, true);
         assert_eq!(solve(&doc).boxes[&frame.right].max[1], 700.0);
-        // Moving the whole left side up does not: it detaches.
+        // Without `via_params` the face lets go of the parameter.
         let s = solve(&doc);
-        translate(&mut doc, &s, frame.left, 1, 10.0, None);
+        move_face(&mut doc, &s, frame.left, 1, Side::Max, 650.0, None, false);
+        let s2 = solve(&doc);
+        assert_eq!(s2.boxes[&frame.left].max[1], 650.0);
+        assert_eq!(s2.boxes[&frame.right].max[1], 700.0);
+        move_face(&mut doc, &s2, frame.left, 1, Side::Max, 700.0, None, false);
+        // Moving the whole left side up does not either: it detaches.
+        let s = solve(&doc);
+        translate(&mut doc, &s, frame.left, 1, 10.0, None, true);
         let s = solve(&doc);
         assert_eq!(s.boxes[&frame.left].max[1], 710.0);
         assert_eq!(s.boxes[&frame.right].max[1], 700.0);
@@ -426,8 +441,8 @@ mod tests {
     fn translating_moves_both_ends() {
         let (mut doc, _, shelf) = shelf_doc();
         let s = solve(&doc);
-        translate(&mut doc, &s, shelf, 0, 40.0, None);
-        translate(&mut doc, &s, shelf, 1, -18.0, None);
+        translate(&mut doc, &s, shelf, 0, 40.0, None, true);
+        translate(&mut doc, &s, shelf, 1, -18.0, None, true);
         let b = solve(&doc).boxes[&shelf];
         assert_eq!((b.min[0], b.max[0]), (58.0, 822.0));
         assert_eq!((b.min[1], b.max[1]), (200.0, 218.0));

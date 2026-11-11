@@ -41,18 +41,30 @@ fn neighbor(
     best.map(|(_, id)| id)
 }
 
-/// The part that reaches furthest along `axis`, to span the whole furniture.
-fn extreme(doc: &Document, solved: &Solved, axis: usize, min: bool) -> Option<PartId> {
-    let value = |id: PartId| {
-        solved
-            .get(id)
-            .map(|b| if min { -b.min[axis] } else { b.max[axis] })
-    };
-    doc.parts
-        .iter()
-        .filter_map(|p| Some((value(p.id)?, p.id)))
-        .max_by(|a, b| a.0.total_cmp(&b.0))
-        .map(|(_, id)| id)
+/// The part that reaches furthest along `axis`, to span the whole furniture. On a tie,
+/// `preferred` (the part clicked) if it is one of them, or else the first.
+fn extreme(
+    doc: &Document,
+    solved: &Solved,
+    axis: usize,
+    min: bool,
+    preferred: PartId,
+) -> Option<PartId> {
+    let mut best: Option<(f64, PartId)> = None;
+    for part in &doc.parts {
+        let Some(b) = solved.get(part.id) else {
+            continue;
+        };
+        let v = if min { -b.min[axis] } else { b.max[axis] };
+        let better = match best {
+            None => true,
+            Some((top, _)) => v > top + 0.01 || ((v - top).abs() <= 0.01 && part.id == preferred),
+        };
+        if better {
+            best = Some((v, part.id));
+        }
+    }
+    best.map(|(_, id)| id)
 }
 
 /// Adds a part of `material` where a face was clicked. A board has its thickness along
@@ -106,7 +118,10 @@ pub fn add_part(
                 };
                 match neighbor(doc, solved, probe, k, towards_min) {
                     Some(id) => Some(End::at(id, side)),
-                    None => Some(End::at(extreme(doc, solved, k, towards_min)?, far_side)),
+                    None => Some(End::at(
+                        extreme(doc, solved, k, towards_min, hit.part)?,
+                        far_side,
+                    )),
                 }
             };
             Extent::Span {

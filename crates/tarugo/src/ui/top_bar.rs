@@ -72,13 +72,19 @@ impl App {
         ui.separator();
         // The stages, in the order a design goes through them.
         ui.spacing_mut().item_spacing.x = 4.0;
+        let compact = ui.available_width() < 600.0;
         for (n, stage) in Stage::ALL.into_iter().enumerate() {
             if n > 0 {
                 ui.label(RichText::new(icons::NEXT).size(11.0).color(p.text_soft));
             }
             let (ico, name) = stage_name(stage);
             let active = self.stage == stage;
-            let text = RichText::new(format!("{ico}  {name}"));
+            // In a narrow window the stages keep only their icon.
+            let text = if compact {
+                RichText::new(ico)
+            } else {
+                RichText::new(format!("{ico}  {name}"))
+            };
             let text = if active {
                 text.color(egui::Color32::WHITE)
             } else {
@@ -90,7 +96,7 @@ impl App {
             } else {
                 button.frame_when_inactive(false)
             };
-            if ui.add(button).clicked() {
+            if ui.add(button).on_hover_text(name).clicked() {
                 self.set_stage(stage);
             }
         }

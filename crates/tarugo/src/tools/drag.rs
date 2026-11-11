@@ -25,6 +25,9 @@ pub struct Drag {
     pub kind: DragKind,
     /// World point grabbed.
     pub grab: Vec3,
+    /// Moving what a parameter places changes the parameter (the front sketch) instead of
+    /// letting go of it (free 3D editing).
+    pub via_params: bool,
 }
 
 fn unit(axis: usize) -> Vec3 {
@@ -72,6 +75,7 @@ impl Drag {
                             *side,
                             s.value,
                             Some(s.face),
+                            self.via_params,
                         );
                     }
                     None => edit::move_face(
@@ -82,6 +86,7 @@ impl Drag {
                         *side,
                         target.round(),
                         None,
+                        self.via_params,
                     ),
                 }
             }
@@ -102,6 +107,7 @@ impl Drag {
                                 axis,
                                 s.value - from,
                                 Some((s.side, s.face)),
+                                self.via_params,
                             );
                         }
                         None => {
@@ -114,6 +120,7 @@ impl Drag {
                                 axis,
                                 to - b.min[axis],
                                 None,
+                                self.via_params,
                             );
                         }
                     }
@@ -150,6 +157,7 @@ mod tests {
                 side: Side::Max,
             },
             grab: Vec3::new(400.0, 591.0, 300.0),
+            via_params: true,
         };
         // A ray coming down from above that passes at z = 352.4.
         let (origin, dir) = (Vec3::new(400.0, 2000.0, 352.4), -Vec3::Y);
@@ -177,6 +185,7 @@ mod tests {
                 axes: vec![0, 1],
             },
             grab: Vec3::new(400.0, 591.0, 300.0),
+            via_params: true,
         };
         let (origin, dir) = (Vec3::new(440.3, 641.0, 2000.0), -Vec3::Z);
         let (moved, _) = drag.apply(origin, dir, None).unwrap();

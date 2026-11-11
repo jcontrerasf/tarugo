@@ -314,17 +314,13 @@ texts! {
         "It is a simple estimate to buy material, not an optimized cutting plan.";
 
     // Free form.
-    shape_intro: "Cara de {} × {} mm ({} horizontal, {} vertical). Las medidas parten de la esquina inferior izquierda.",
-        "Face of {} × {} mm ({} across, {} up). Measures start at the lower-left corner.";
+    shape_intro: "Cara de {} × {} mm ({} horizontal, {} vertical en el dibujo). Las medidas parten de la esquina inferior izquierda del dibujo.",
+        "Face of {} × {} mm ({} across, {} up in the drawing). Measures start at the lower-left corner of the drawing.";
     shape_note: "La lista de corte sigue usando el rectángulo completo.", "The cut list keeps using the whole rectangle.";
     shape_bad_dimension: "Medida no válida", "Invalid measure";
     shape_out_of_bounds: "No cabe en la pieza", "It does not fit in the part";
     shape_overlap: "Choca con otra operación o con una esquina", "It runs into another feature or a corner";
     corners: "Esquinas", "Corners";
-    corner_bottom_left: "Inferior izquierda", "Lower left";
-    corner_bottom_right: "Inferior derecha", "Lower right";
-    corner_top_right: "Superior derecha", "Upper right";
-    corner_top_left: "Superior izquierda", "Upper left";
     corner_square: "Recta", "Square";
     corner_round: "Redondeada", "Rounded";
     corner_chamfer: "Chaflán", "Chamfer";

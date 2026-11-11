@@ -5,7 +5,7 @@ use eframe::egui::{self, Color32, Pos2, RichText, Sense, Shape as Paint, Stroke,
 use tarugo_core::analysis::face_size;
 use tarugo_core::expr::format_number;
 use tarugo_core::joints::other_axes;
-use tarugo_core::model::{AXIS_NAMES, Dim};
+use tarugo_core::model::{AXIS_NAMES, Dim, Side};
 use tarugo_core::shape::{Corner, Feature, Item, Outline, ProblemKind, Shape};
 
 use crate::app::App;
@@ -13,6 +13,7 @@ use crate::i18n::{fill, t};
 use crate::icons;
 use crate::theme::{self, pal};
 use crate::ui::dim_field;
+use crate::ui::properties::side_name;
 
 /// Size of the drawing of the face.
 const DRAWING: Vec2 = Vec2::new(330.0, 250.0);
@@ -73,9 +74,9 @@ impl App {
                     egui::ScrollArea::vertical()
                         .max_height(DRAWING.y + 60.0)
                         .show(ui, |ui| {
-                            corner_rows(ui, &mut shape, &outline, &solved);
+                            corner_rows(ui, &mut shape, &outline, &solved, [i, j]);
                             ui.add_space(8.0);
-                            feature_rows(ui, &mut shape, &outline, &solved, su, sv);
+                            feature_rows(ui, &mut shape, &outline, &solved, [su, sv], [i, j]);
                         });
                 });
             });
@@ -145,25 +146,43 @@ fn problem_mark(ui: &mut Ui, outline: &Outline, item: Item) {
     }
 }
 
+/// Names of the four edges of the face (in outline order) by where they are on the part:
+/// the face spans the axes `[i, j]`.
+fn edge_names(axes: [usize; 2]) -> [&'static str; 4] {
+    let [i, j] = axes;
+    [
+        side_name(j, Side::Min),
+        side_name(i, Side::Max),
+        side_name(j, Side::Max),
+        side_name(i, Side::Min),
+    ]
+}
+
 fn corner_rows(
     ui: &mut Ui,
     shape: &mut Shape,
     outline: &Outline,
     solved: &tarugo_core::solve::Solved,
+    axes: [usize; 2],
 ) {
     theme::section_title(ui, t().corners);
-    let names = [
-        t().corner_bottom_left,
-        t().corner_bottom_right,
-        t().corner_top_right,
-        t().corner_top_left,
-    ];
+    // Each corner is where two edges meet: the one before it and the one it starts.
+    // Named along the second axis first: "back · left", "front · right".
+    let edges = edge_names(axes);
+    let names: [String; 4] = std::array::from_fn(|n| {
+        let (before, after) = (edges[(n + 3) % 4], edges[n]);
+        if n % 2 == 0 {
+            format!("{after} · {before}")
+        } else {
+            format!("{before} · {after}")
+        }
+    });
     egui::Grid::new("corners")
         .num_columns(4)
         .spacing([6.0, 4.0])
         .show(ui, |ui| {
             for (n, name) in names.iter().enumerate() {
-                ui.label(*name);
+                ui.label(name.as_str());
                 let kind = match &shape.corners[n] {
                     Corner::Square => 0,
                     Corner::Round { .. } => 1,
@@ -226,9 +245,10 @@ fn feature_rows(
     shape: &mut Shape,
     outline: &Outline,
     solved: &tarugo_core::solve::Solved,
-    su: f64,
-    sv: f64,
+    size: [f64; 2],
+    axes: [usize; 2],
 ) {
+    let [su, sv] = size;
     theme::section_title(ui, t().features);
     let mut delete = None;
     for (n, feature) in shape.features.iter_mut().enumerate() {
@@ -241,7 +261,7 @@ fn feature_rows(
                 radius,
             } => {
                 ui.label(theme::strong(t().notch));
-                let edges = [t().side_bottom, t().side_right, t().side_top, t().side_left];
+                let edges = edge_names(axes);
                 egui::ComboBox::from_id_salt(("edge", n))
                     .width(70.0)
                     .selected_text(edges[*edge % 4])

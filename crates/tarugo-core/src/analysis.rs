@@ -552,7 +552,7 @@ mod tests {
         // Staggered shelves leave the way free... but the cells are wide enough only
         // with a short drill.
         let s0 = solve(&doc);
-        crate::edit::translate(&mut doc, &s0, right_shelf, 1, 100.0, None);
+        crate::edit::translate(&mut doc, &s0, right_shelf, 1, 100.0, None, true);
         let s = solve(&doc);
         let issues = check_fastening(&doc, &s);
         assert!(!issues.iter().any(|i| matches!(i, Issue::Blocked { .. })));
@@ -621,7 +621,7 @@ mod tests {
         let s = solve(&doc);
         assert!(check_geometry(&doc, &s).is_empty());
         // The top pushed down into... still between the sides; move it sideways instead.
-        crate::edit::translate(&mut doc, &s, f.top, 0, -10.0, None);
+        crate::edit::translate(&mut doc, &s, f.top, 0, -10.0, None, true);
         let s = solve(&doc);
         let issues = check_geometry(&doc, &s);
         assert!(matches!(issues.as_slice(), [Issue::Overlap(o)] if o.a == f.left && o.b == f.top));
