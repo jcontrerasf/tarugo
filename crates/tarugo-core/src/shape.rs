@@ -447,7 +447,7 @@ impl Outline {
             at += h.len();
         }
         let indices = earcutr::earcut(&flat, &hole_starts, 2).unwrap_or_default();
-        let triangles = indices.as_chunks::<3>().0.iter().copied().collect();
+        let triangles = indices.as_chunks::<3>().0.to_vec();
         (points, triangles)
     }
 
