@@ -1,0 +1,482 @@
+{
+  "version": 1,
+  "materials": [
+    {
+      "id": 1,
+      "name": "Melamina 18 mm",
+      "type": "board",
+      "thickness": 18.0,
+      "stock_length": null,
+      "stock_width": null,
+      "color": [
+        227,
+        199,
+        154
+      ]
+    }
+  ],
+  "main_material": 1,
+  "params": [
+    {
+      "name": "W",
+      "value": "600"
+    },
+    {
+      "name": "H",
+      "value": "600"
+    },
+    {
+      "name": "D",
+      "value": "350"
+    }
+  ],
+  "parts": [
+    {
+      "id": 2,
+      "name": "Lateral izquierdo",
+      "material": 1,
+      "axes": [
+        {
+          "kind": "thick",
+          "anchor": {
+            "at": "abs",
+            "value": "0"
+          },
+          "align": "min"
+        },
+        {
+          "kind": "span",
+          "lo": {
+            "at": "abs",
+            "value": "0"
+          },
+          "hi": {
+            "at": "abs",
+            "value": "H"
+          }
+        },
+        {
+          "kind": "span",
+          "lo": {
+            "at": "abs",
+            "value": "0"
+          },
+          "hi": {
+            "at": "abs",
+            "value": "D"
+          }
+        }
+      ],
+      "swap_section": false,
+      "shape": null
+    },
+    {
+      "id": 3,
+      "name": "Lateral derecho",
+      "material": 1,
+      "axes": [
+        {
+          "kind": "thick",
+          "anchor": {
+            "at": "abs",
+            "value": "W"
+          },
+          "align": "max"
+        },
+        {
+          "kind": "span",
+          "lo": {
+            "at": "abs",
+            "value": "0"
+          },
+          "hi": {
+            "at": "abs",
+            "value": "H"
+          }
+        },
+        {
+          "kind": "span",
+          "lo": {
+            "at": "abs",
+            "value": "0"
+          },
+          "hi": {
+            "at": "abs",
+            "value": "D"
+          }
+        }
+      ],
+      "swap_section": false,
+      "shape": null
+    },
+    {
+      "id": 4,
+      "name": "Base",
+      "material": 1,
+      "axes": [
+        {
+          "kind": "span",
+          "lo": {
+            "at": "ref",
+            "part": 2,
+            "side": "max",
+            "offset": "0"
+          },
+          "hi": {
+            "at": "ref",
+            "part": 3,
+            "side": "min",
+            "offset": "0"
+          }
+        },
+        {
+          "kind": "thick",
+          "anchor": {
+            "at": "abs",
+            "value": "0"
+          },
+          "align": "min"
+        },
+        {
+          "kind": "span",
+          "lo": {
+            "at": "abs",
+            "value": "0"
+          },
+          "hi": {
+            "at": "abs",
+            "value": "D"
+          }
+        }
+      ],
+      "swap_section": false,
+      "shape": null
+    },
+    {
+      "id": 5,
+      "name": "Tapa",
+      "material": 1,
+      "axes": [
+        {
+          "kind": "span",
+          "lo": {
+            "at": "ref",
+            "part": 2,
+            "side": "max",
+            "offset": "0"
+          },
+          "hi": {
+            "at": "ref",
+            "part": 3,
+            "side": "min",
+            "offset": "0"
+          }
+        },
+        {
+          "kind": "thick",
+          "anchor": {
+            "at": "abs",
+            "value": "H"
+          },
+          "align": "max"
+        },
+        {
+          "kind": "span",
+          "lo": {
+            "at": "abs",
+            "value": "0"
+          },
+          "hi": {
+            "at": "abs",
+            "value": "D"
+          }
+        }
+      ],
+      "swap_section": false,
+      "shape": null
+    },
+    {
+      "id": 6,
+      "name": "División 1",
+      "material": 1,
+      "axes": [
+        {
+          "kind": "thick",
+          "anchor": {
+            "at": "ref",
+            "part": 2,
+            "side": "max",
+            "offset": "250"
+          },
+          "align": "min"
+        },
+        {
+          "kind": "span",
+          "lo": {
+            "at": "ref",
+            "part": 4,
+            "side": "max",
+            "offset": "0"
+          },
+          "hi": {
+            "at": "ref",
+            "part": 5,
+            "side": "min",
+            "offset": "0"
+          }
+        },
+        {
+          "kind": "span",
+          "lo": {
+            "at": "abs",
+            "value": "0"
+          },
+          "hi": {
+            "at": "abs",
+            "value": "D"
+          }
+        }
+      ],
+      "swap_section": false,
+      "shape": null
+    },
+    {
+      "id": 7,
+      "name": "Repisa 1",
+      "material": 1,
+      "axes": [
+        {
+          "kind": "span",
+          "lo": {
+            "at": "ref",
+            "part": 6,
+            "side": "max",
+            "offset": "0"
+          },
+          "hi": {
+            "at": "ref",
+            "part": 3,
+            "side": "min",
+            "offset": "0"
+          }
+        },
+        {
+          "kind": "thick",
+          "anchor": {
+            "at": "ref",
+            "part": 4,
+            "side": "max",
+            "offset": "W/4"
+          },
+          "align": "min"
+        },
+        {
+          "kind": "span",
+          "lo": {
+            "at": "abs",
+            "value": "0"
+          },
+          "hi": {
+            "at": "abs",
+            "value": "D"
+          }
+        }
+      ],
+      "swap_section": false,
+      "shape": null
+    },
+    {
+      "id": 8,
+      "name": "Repisa 2",
+      "material": 1,
+      "axes": [
+        {
+          "kind": "span",
+          "lo": {
+            "at": "ref",
+            "part": 2,
+            "side": "max",
+            "offset": "0"
+          },
+          "hi": {
+            "at": "ref",
+            "part": 6,
+            "side": "min",
+            "offset": "0"
+          }
+        },
+        {
+          "kind": "thick",
+          "anchor": {
+            "at": "ref",
+            "part": 5,
+            "side": "min",
+            "offset": "-(H/2)"
+          },
+          "align": "max"
+        },
+        {
+          "kind": "span",
+          "lo": {
+            "at": "abs",
+            "value": "0"
+          },
+          "hi": {
+            "at": "abs",
+            "value": "D"
+          }
+        }
+      ],
+      "swap_section": false,
+      "shape": null
+    }
+  ],
+  "screws": [
+    {
+      "id": 9,
+      "through": 2,
+      "into": 4,
+      "u": 0.5,
+      "v": 0.14285714285714285
+    },
+    {
+      "id": 10,
+      "through": 2,
+      "into": 4,
+      "u": 0.5,
+      "v": 0.8571428571428572
+    },
+    {
+      "id": 11,
+      "through": 2,
+      "into": 5,
+      "u": 0.5,
+      "v": 0.14285714285714285
+    },
+    {
+      "id": 12,
+      "through": 2,
+      "into": 5,
+      "u": 0.5,
+      "v": 0.8571428571428572
+    },
+    {
+      "id": 13,
+      "through": 2,
+      "into": 8,
+      "u": 0.5,
+      "v": 0.14285714285714285
+    },
+    {
+      "id": 14,
+      "through": 2,
+      "into": 8,
+      "u": 0.5,
+      "v": 0.8571428571428572
+    },
+    {
+      "id": 15,
+      "through": 3,
+      "into": 4,
+      "u": 0.5,
+      "v": 0.14285714285714285
+    },
+    {
+      "id": 16,
+      "through": 3,
+      "into": 4,
+      "u": 0.5,
+      "v": 0.8571428571428572
+    },
+    {
+      "id": 17,
+      "through": 3,
+      "into": 5,
+      "u": 0.5,
+      "v": 0.14285714285714285
+    },
+    {
+      "id": 18,
+      "through": 3,
+      "into": 5,
+      "u": 0.5,
+      "v": 0.8571428571428572
+    },
+    {
+      "id": 19,
+      "through": 3,
+      "into": 7,
+      "u": 0.5,
+      "v": 0.14285714285714285
+    },
+    {
+      "id": 20,
+      "through": 3,
+      "into": 7,
+      "u": 0.5,
+      "v": 0.8571428571428572
+    },
+    {
+      "id": 21,
+      "through": 4,
+      "into": 6,
+      "u": 0.5,
+      "v": 0.14285714285714285
+    },
+    {
+      "id": 22,
+      "through": 4,
+      "into": 6,
+      "u": 0.5,
+      "v": 0.8571428571428572
+    },
+    {
+      "id": 23,
+      "through": 5,
+      "into": 6,
+      "u": 0.5,
+      "v": 0.14285714285714285
+    },
+    {
+      "id": 24,
+      "through": 5,
+      "into": 6,
+      "u": 0.5,
+      "v": 0.8571428571428572
+    },
+    {
+      "id": 25,
+      "through": 6,
+      "into": 7,
+      "u": 0.5,
+      "v": 0.14285714285714285
+    },
+    {
+      "id": 26,
+      "through": 6,
+      "into": 7,
+      "u": 0.5,
+      "v": 0.8571428571428572
+    },
+    {
+      "id": 27,
+      "through": 6,
+      "into": 8,
+      "u": 0.5,
+      "v": 0.14285714285714285
+    },
+    {
+      "id": 28,
+      "through": 6,
+      "into": 8,
+      "u": 0.5,
+      "v": 0.8571428571428572
+    }
+  ],
+  "settings": {
+    "drill_length": 220.0,
+    "kerf": 3.0
+  },
+  "depth_set": true,
+  "next_id": 29
+}

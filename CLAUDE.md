@@ -32,3 +32,27 @@ front sketch with dimensions → depth → free 3D editing with snapping → scr
 - `crates/tarugo`: the eframe app (binary `tarugo`). The 3D view renders with wgpu to an
   offscreen texture (color + depth, MSAA) shown as an egui image; dimensions, handles and
   warnings are drawn over it with the egui painter.
+
+## Checking the interface
+
+Debug builds run a script from `TARUGO_DEMO` (see `crates/tarugo/src/demo.rs`): actions
+separated by `;` that feed fake clicks, drags and keys, and save screenshots as PPM.
+
+```bash
+TARUGO_DEMO="wait:40;stage:screws;autoscrews;analyze;shot:/tmp/a.ppm;quit" \
+    cargo run -p tarugo -- samples/estante.tarugo
+```
+
+Positions are in points, not pixels: divide what a screenshot shows by the display scale.
+Never capture with ImageMagick's `import -window`: it grabs the pointer waiting for a click.
+
+## Decisions worth knowing
+
+- Dragging a face that a parameter places (`W`, `H`, `D`) changes the parameter only in the
+  front sketch. In the 3D design the part lets go of it (`Drag::via_params`), so one board
+  can be stretched without resizing the whole furniture.
+- egui samples user textures as gamma-encoded: the scene target is `Rgba8Unorm` and colors
+  go in without linearizing.
+- The cut list uses the bounding rectangle of every part; free forms never change it.
+- A joint is screwable if one of its parts is at most `analysis::MAX_THROUGH` thick along
+  the joint's axis. Edge-to-edge joints (boards side by side) are not asked for screws.

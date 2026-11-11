@@ -1,6 +1,6 @@
 //! Context bar: the options of the current tool.
 
-use eframe::egui::{self, Align, Layout, RichText, Ui};
+use eframe::egui::{self, RichText, Ui};
 use tarugo_core::model::AXIS_NAMES;
 
 use crate::app::{App, Stage};
@@ -12,25 +12,23 @@ use crate::tools::{self, AlignChoice, RefChoice, Tool};
 impl App {
     pub(crate) fn context_bar(&mut self, ui: &mut Ui) {
         ui.set_min_height(30.0);
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if self.stage != Stage::Screws {
+        // Wrapped: in a narrow window the options take a second row instead of hiding.
+        ui.horizontal_wrapped(|ui| {
+            match self.tool {
+                Tool::Select => self.select_options(ui),
+                Tool::Divide(_) => self.divide_options(ui),
+                Tool::AddBoard | Tool::AddStick => self.add_options(ui),
+                Tool::Screw => {}
+            }
+            if self.stage == Stage::Screws {
+                self.screw_options(ui);
+            } else {
+                ui.separator();
                 ui.label(
                     RichText::new(format!("{} {}", icons::SNAP, t().snap_hint))
                         .color(pal().text_soft),
                 );
             }
-            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                ui.shrink_clip_rect(ui.max_rect());
-                match self.tool {
-                    Tool::Select => self.select_options(ui),
-                    Tool::Divide(_) => self.divide_options(ui),
-                    Tool::AddBoard | Tool::AddStick => self.add_options(ui),
-                    Tool::Screw => {}
-                }
-                if self.stage == Stage::Screws {
-                    self.screw_options(ui);
-                }
-            });
         });
     }
 
