@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Tarugo
+GenericName=Furniture Design
+GenericName[es]=Diseño de muebles
+Comment=Design furniture out of boards and lumber, with screws analysis and cut list
+Comment[es]=Diseña muebles de tableros y palos, con análisis de tornillos y lista de corte
+Exec=tarugo %f
+Icon=tarugo
+Terminal=false
+Categories=Graphics;3DGraphics;Engineering;
+StartupWMClass=tarugo

@@ -24,6 +24,8 @@ pub const APP: &str = "Tarugo";
 pub const APP_ID: &str = "tarugo";
 /// File extension of the designs.
 pub const EXT: &str = "tarugo";
+/// Window icon.
+pub const ICON: &[u8] = include_bytes!("../assets/icon.png");
 
 /// Steps of a design; each one shows its own tools.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

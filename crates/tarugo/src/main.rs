@@ -29,6 +29,7 @@ fn main() -> eframe::Result {
         viewport: egui::ViewportBuilder::default()
             .with_title(app::APP)
             .with_app_id(app::APP_ID)
+            .with_icon(eframe::icon_data::from_png_bytes(app::ICON).expect("valid PNG icon"))
             .with_inner_size([1360.0, 840.0])
             .with_min_inner_size([900.0, 560.0]),
         wgpu_options: wgpu_options(),

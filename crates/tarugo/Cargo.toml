@@ -13,3 +13,27 @@ eframe = { version = "0.37", features = ["persistence"] }
 glam = { version = "0.32", features = ["bytemuck"] }
 rfd = "0.17.2"
 serde = { version = "1", features = ["derive"] }
+
+[package.metadata.deb]
+name = "tarugo"
+maintainer = "Julio Contreras"
+section = "graphics"
+extended-description = """\
+Design furniture out of boards and lumber: a front sketch with dimensions, free 3D editing \
+with snapping, screws with an analysis of what holds each part and whether a drill can \
+reach, and the cut list for a cutting service."""
+depends = "$auto"
+recommends = "xdg-desktop-portal"
+assets = [
+    ["target/release/tarugo", "usr/bin/", "755"],
+    ["../../packaging/linux/tarugo.desktop", "usr/share/applications/", "644"],
+    ["../../assets/tarugo.svg", "usr/share/icons/hicolor/scalable/apps/tarugo.svg", "644"],
+    ["../../assets/tarugo-16.png", "usr/share/icons/hicolor/16x16/apps/tarugo.png", "644"],
+    ["../../assets/tarugo-32.png", "usr/share/icons/hicolor/32x32/apps/tarugo.png", "644"],
+    ["../../assets/tarugo-48.png", "usr/share/icons/hicolor/48x48/apps/tarugo.png", "644"],
+    ["../../assets/tarugo-64.png", "usr/share/icons/hicolor/64x64/apps/tarugo.png", "644"],
+    ["../../assets/tarugo-128.png", "usr/share/icons/hicolor/128x128/apps/tarugo.png", "644"],
+    ["../../assets/tarugo-256.png", "usr/share/icons/hicolor/256x256/apps/tarugo.png", "644"],
+    ["../../assets/tarugo-512.png", "usr/share/icons/hicolor/512x512/apps/tarugo.png", "644"],
+    ["../../LICENSE", "usr/share/doc/tarugo/copyright", "644"],
+]

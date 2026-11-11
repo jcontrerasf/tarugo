@@ -1,0 +1,112 @@
+# Builds the packages. With a `vX.Y.Z` tag it also publishes a GitHub Release; run by hand
+# (workflow_dispatch) it only leaves the packages as artifacts of the run.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        name: Version (the tag must match Cargo.toml)
+        run: |
+          version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
+          if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match version $version in Cargo.toml"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  linux:
+    needs: version
+    # The glibc of 22.04 is old: the binary also runs on earlier distros.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb
+      - name: System dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libxcb-render0-dev \
+            libxcb-shape0-dev libxcb-xfixes0-dev
+      - name: .deb
+        run: |
+          mkdir -p target/packages
+          cargo deb -p tarugo --locked -o target/packages/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: target/packages/*
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked -p tarugo
+      - name: Portable (.zip)
+        shell: pwsh
+        run: |
+          $dir = "target\Tarugo-$env:VERSION"
+          New-Item -ItemType Directory -Force $dir, target\packages | Out-Null
+          Copy-Item target\release\tarugo.exe $dir\Tarugo.exe
+          Copy-Item LICENSE $dir\LICENSE.txt
+          Compress-Archive -Path $dir -DestinationPath "target\packages\Tarugo-$env:VERSION-windows-portable.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: target/packages/*
+
+  macos:
+    needs: version
+    runs-on: macos-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked -p tarugo --target aarch64-apple-darwin
+      - run: cargo build --release --locked -p tarugo --target x86_64-apple-darwin
+      - name: .app and .dmg
+        run: packaging/macos/bundle.sh "$VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: target/packages/*
+
+  publish:
+    if: github.ref_type == 'tag'
+    needs: [linux, windows, macos]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: packages
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: packages/*
+          generate_release_notes: true
