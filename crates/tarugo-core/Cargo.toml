@@ -1,0 +1,12 @@
+[package]
+name = "tarugo-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Furniture model for Tarugo: parametric parts, joints, screws analysis and cut list"
+
+[dependencies]
+earcutr = "0.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
