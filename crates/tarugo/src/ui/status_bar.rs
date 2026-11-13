@@ -47,7 +47,9 @@ impl App {
                         ui.add(egui::Label::new(text.as_str()).truncate());
                     }
                     (None, None) => {
-                        let hint = if self.stage.has_view() {
+                        let hint = if let Some(ed) = &self.shape_editor {
+                            ed.tool.hint()
+                        } else if self.stage.has_view() {
                             self.tool.hint()
                         } else {
                             ""

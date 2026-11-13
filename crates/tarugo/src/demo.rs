@@ -7,7 +7,9 @@
 //! `tool:<select|dividev|divideh|board|stick|screw>`, `move:x:y`, `click:x:y`,
 //! `drag:x1:y1:x2:y2`, `type:text`, `key:<enter|escape|delete>`, `view:yaw:pitch`,
 //! `depth:<mm>`, `autoscrews`, `analyze`, `screws:<on|off>` (shown in the 3D design), `shape`
-//! (free form of the selection), `lang:<es|en>`, `dark`, `light`, `save:path`, `wait:frames`,
+//! (free-form mode on the selection), `shapetool:<select|rect|circle|slot|polygon|notch|guide>`,
+//! `shift:<on|off>` (held),
+//! `lang:<es|en>`, `dark`, `light`, `save:path`, `wait:frames`,
 //! `shot:path.ppm` and `quit`. Positions are in points
 //! from the top-left corner of the window.
 
@@ -21,6 +23,7 @@ use tarugo_core::model::Dim;
 
 use crate::app::{App, Stage};
 use crate::i18n::{self, Lang};
+use crate::shape_mode::ShapeTool;
 use crate::theme::{self, ThemeChoice};
 use crate::tools::{self, Tool};
 
@@ -209,7 +212,34 @@ impl App {
                 self.session.path = Some(PathBuf::from(args.join(":")));
                 self.save(false);
             }
-            "shape" => self.shape_editor = self.session.selected,
+            "shape" => {
+                if let Some(id) = self.session.selected {
+                    self.enter_shape(id);
+                }
+            }
+            "shift" => {
+                let modifiers = if arg == "off" {
+                    Modifiers::NONE
+                } else {
+                    Modifiers::SHIFT
+                };
+                demo.events
+                    .push_back(vec![Event::ModifiersChanged(modifiers)]);
+            }
+            "shapetool" => {
+                let tool = match arg {
+                    "rect" => ShapeTool::Rect,
+                    "circle" => ShapeTool::Circle,
+                    "slot" => ShapeTool::Slot,
+                    "polygon" => ShapeTool::Polygon,
+                    "notch" => ShapeTool::Notch,
+                    "guide" => ShapeTool::Guide,
+                    _ => ShapeTool::Select,
+                };
+                if let Some(ed) = &mut self.shape_editor {
+                    ed.set_tool(tool);
+                }
+            }
             "lang" => {
                 let lang = if arg == "en" { Lang::En } else { Lang::Es };
                 self.prefs.lang = lang;

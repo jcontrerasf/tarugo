@@ -26,8 +26,13 @@ Spanish and English.
    stretch it. Faces snap to the faces and middles of other parts and stay attached to them
    (hold **Alt** to turn snapping off). Add boards and sticks by clicking the face they sit
    on, duplicate a part right beside itself (several boards for a top), and give a part a
-   **free form**: rounded or chamfered corners, notches, slots and holes, all placed with
-   dimensions. Parts that run into each other are painted red and listed.
+   **free form**: the view shows its face flat and you draw the cuts on it — rectangles,
+   holes, slots, notches and polygons (concave too, with a radius at every vertex). A cut
+   inside the board is a cutout; across its border it bites the outline. Drag a cut to move
+   it and its points to change it, round or chamfer the corners by dragging them, or set
+   every measure in the panel: drag a value sideways or click it to type (formulas work).
+   Hold **Ctrl** or **Shift** to keep the sides of a polygon at multiples of 15°, and place
+   **guide lines** for the cuts to snap to. Parts that run into each other are painted red and listed.
 5. **Screws** — click the face a screw goes in through, over a joint. *Screw everything* fills
    the joints a drill can reach. **Analyze** checks that every part is held by at least two
    screws (or it could rotate) and warns where a drill cannot work: a cross of boards, where

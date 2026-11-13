@@ -83,8 +83,8 @@ impl App {
         }
         if let Some((id, locked)) = lock {
             self.cancel_gesture();
-            if locked && self.shape_editor == Some(id) {
-                self.shape_editor = None;
+            if locked && self.shape_editor.as_ref().is_some_and(|e| e.part == id) {
+                self.leave_shape();
             }
             self.session.edit(|d| {
                 if let Some(p) = d.part_mut(id) {

@@ -46,6 +46,12 @@ pub const AUTO: &str = "\u{E6B6}"; // magic-wand
 pub const ANALYZE: &str = "\u{EADC}"; // list-checks
 pub const EQUAL: &str = "\u{E21C}"; // equals
 pub const SHAPE: &str = "\u{EC5E}"; // shapes
+pub const RECTANGLE: &str = "\u{E3F0}"; // rectangle
+pub const CIRCLE: &str = "\u{E18A}"; // circle
+pub const SLOT: &str = "\u{E700}"; // pill
+pub const POLYGON: &str = "\u{E6D0}"; // polygon
+pub const NOTCH: &str = "\u{EBD4}"; // subtract-square
+pub const GUIDE: &str = "\u{E6B8}"; // ruler
 pub const SNAP: &str = "\u{E680}"; // magnet
 
 // View.

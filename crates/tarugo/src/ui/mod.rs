@@ -74,6 +74,101 @@ pub fn dim_field(
         .then_some(committed)
 }
 
+/// Like [`dim_field`] for a value that is also set by dragging: a plain number changes
+/// while it is dragged sideways (Shift: tenths), never below `min`; a click opens it to type
+/// a number or a formula.
+pub fn dim_drag(
+    ui: &mut Ui,
+    salt: impl Hash + std::fmt::Debug + Copy,
+    dim: &Dim,
+    solved: &Solved,
+    width: f32,
+    min: f64,
+) -> Option<Dim> {
+    // The id of the text field of `dim_field`, to give it the focus.
+    let id = ui.scope_id().with(("dim", salt));
+    let editing_id = id.with("editing");
+    let start_id = id.with("drag_start");
+    // 1: just opened (the focus is on its way), 2: being typed in.
+    let editing = ui.data(|d| d.get_temp::<u8>(editing_id)).unwrap_or(0);
+    if editing > 0 {
+        if editing == 1 {
+            ui.memory_mut(|m| m.request_focus(id));
+        }
+        let out = dim_field(ui, salt, dim, solved, width);
+        if editing == 1
+            && let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), id)
+        {
+            // Everything selected: what is typed replaces the value.
+            let all = egui::text::CCursorRange::two(
+                egui::text::CCursor::new(0),
+                egui::text::CCursor::new(dim.0.chars().count()),
+            );
+            state.cursor.set_char_range(Some(all));
+            state.store(ui.ctx(), id);
+        }
+        let next = if editing == 1 || ui.memory(|m| m.has_focus(id)) {
+            2u8
+        } else {
+            0
+        };
+        ui.data_mut(|d| d.insert_temp(editing_id, next));
+        return out;
+    }
+    let value = solved.eval(dim);
+    let number = value.as_ref().ok().copied().filter(|_| !dim.is_formula());
+    let size = egui::vec2(width + 8.0, ui.spacing().interact_size.y);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click_and_drag());
+    let visuals = ui.style().interact(&response);
+    ui.painter().rect(
+        rect,
+        visuals.corner_radius,
+        ui.visuals().text_edit_bg_color(),
+        visuals.bg_stroke,
+        egui::StrokeKind::Inside,
+    );
+    let color = if value.is_err() {
+        pal().error
+    } else {
+        visuals.text_color()
+    };
+    ui.painter().with_clip_rect(rect.shrink(2.0)).text(
+        rect.left_center() + egui::vec2(4.0, 0.0),
+        egui::Align2::LEFT_CENTER,
+        &dim.0,
+        egui::TextStyle::Body.resolve(ui.style()),
+        color,
+    );
+    let response = match &value {
+        Ok(v) if number.is_none() => response.on_hover_text(format!("= {}", format_number(*v))),
+        Err(e) => response.on_hover_text(error_text(e)),
+        _ => response.on_hover_cursor(egui::CursorIcon::ResizeHorizontal),
+    };
+    if response.clicked() {
+        ui.data_mut(|d| d.insert_temp(editing_id, 1u8));
+    }
+    let number = number?;
+    if response.drag_started() {
+        ui.data_mut(|d| d.insert_temp(start_id, (number, 0.0f32)));
+    }
+    if !response.dragged() {
+        return None;
+    }
+    let (start, moved) = ui
+        .data(|d| d.get_temp::<(f64, f32)>(start_id))
+        .unwrap_or((number, 0.0));
+    let moved = moved + response.drag_delta().x;
+    ui.data_mut(|d| d.insert_temp(start_id, (start, moved)));
+    let step = if ui.input(|i| i.modifiers.shift) {
+        0.1
+    } else {
+        1.0
+    };
+    let new = ((start + moved as f64 * step) / step).round() * step;
+    let new = Dim::num((new.max(min) * 10.0).round() / 10.0);
+    (new != *dim).then_some(new)
+}
+
 /// A length in millimetres edited by dragging or typing. True if it changed.
 pub fn mm_field(ui: &mut Ui, value: &mut f64, max: f64) -> Response {
     ui.add(

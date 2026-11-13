@@ -184,8 +184,8 @@ texts! {
     dir_behind: "Atrás", "Behind";
     dir_in_front: "Adelante", "In front";
     free_form: "Forma libre", "Free form";
-    free_form_help: "Esquinas redondeadas, bocados, ranuras y perforaciones",
-        "Rounded corners, notches, slots and holes";
+    free_form_help: "Esquinas redondeadas y cortes: rectángulos, perforaciones, ranuras, polígonos y bocados",
+        "Rounded corners and cuts: rectangles, holes, slots, polygons and notches";
 
     // Screws.
     screws_per_click: "Tornillos por clic", "Screws per click";
@@ -263,7 +263,7 @@ texts! {
     issue_inverted: "{} tiene un extremo antes que el otro", "{} has one end before the other";
     issue_overlap: "{} y {} se cruzan", "{} and {} run into each other";
     issue_inside: "{} y {} están una dentro de otra", "{} and {} are one inside the other";
-    issue_shape: "{}: la forma libre tiene operaciones que no caben", "{}: the free form has features that do not fit";
+    issue_shape: "{}: la forma libre tiene cortes con problemas", "{}: the free form has cuts with problems";
     issue_floating: "{} no toca ninguna otra pieza", "{} touches no other part";
     issue_no_screws_part: "{} no tiene tornillos", "{} has no screws";
     issue_one_screw_part: "{} tiene un solo tornillo: puede rotar", "{} has a single screw: it can rotate";
@@ -323,17 +323,39 @@ texts! {
         "It is a simple estimate to buy material, not an optimized cutting plan.";
 
     // Free form.
-    shape_intro: "Cara de {} × {} mm ({} horizontal, {} vertical en el dibujo). Las medidas parten de la esquina inferior izquierda del dibujo.",
-        "Face of {} × {} mm ({} across, {} up in the drawing). Measures start at the lower-left corner of the drawing.";
+    shape_intro: "Cara de {} × {} mm ({} horizontal, {} vertical). Las medidas parten de la esquina inferior izquierda.",
+        "Face of {} × {} mm ({} across, {} up). Measures start at the lower-left corner.";
     shape_note: "La lista de corte sigue usando el rectángulo completo.", "The cut list keeps using the whole rectangle.";
     shape_bad_dimension: "Medida no válida", "Invalid measure";
-    shape_out_of_bounds: "No cabe en la pieza", "It does not fit in the part";
-    shape_overlap: "Choca con otra operación o con una esquina", "It runs into another feature or a corner";
+    shape_out_of_bounds: "No toca la pieza o no cabe en ella", "It does not touch the part or does not fit in it";
+    shape_self_intersecting: "Los lados del polígono se cruzan", "The sides of the polygon cross";
+    shape_splits: "Los cortes dejan la pieza en varios trozos: solo se conserva el mayor",
+        "The cuts leave the part in several pieces: only the largest is kept";
+    done: "Listo", "Done";
+    done_help: "Volver al diseño 3D (Esc)", "Back to the 3D design (Esc)";
+    figures: "Cortes", "Cuts";
+    no_figures: "Sin cortes. Dibuja uno con las herramientas de la izquierda.",
+        "No cuts. Draw one with the tools on the left.";
+    rectangle: "Rectángulo", "Rectangle";
+    polygon: "Polígono", "Polygon";
+    radius_all: "radio en todos los vértices", "radius on every vertex";
+    feature_edge: "borde", "edge";
+    feature_height: "alto", "height";
+    hint_shape_select: "Clic para seleccionar un corte; arrástralo para moverlo o arrastra sus puntos para cambiarlo. Los círculos de las esquinas las redondean.",
+        "Click to select a cut; drag it to move it or drag its points to change it. The circles at the corners round them.";
+    hint_shape_rect: "Arrastra de esquina a esquina (o haz clic para uno estándar)",
+        "Drag from corner to corner (or click for a standard one)";
+    hint_shape_circle: "Arrastra del centro al borde (o haz clic para una estándar)",
+        "Drag from the centre to the rim (or click for a standard one)";
+    hint_shape_slot: "Arrastra de un extremo al otro (o haz clic para una estándar)",
+        "Drag from one end to the other (or click for a standard one)";
+    hint_shape_polygon: "Clic en cada punto (Ctrl o Shift: ángulos de 15°); doble clic, Enter o clic en el primero para cerrar; Esc cancela",
+        "Click every point (Ctrl or Shift: 15° angles); double click, Enter or click the first one to close; Esc cancels";
+    hint_shape_notch: "Clic cerca de un borde de la pieza", "Click near an edge of the part";
     corners: "Esquinas", "Corners";
     corner_square: "Recta", "Square";
     corner_round: "Redondeada", "Rounded";
     corner_chamfer: "Chaflán", "Chamfer";
-    features: "Bocados, ranuras y perforaciones", "Notches, slots and holes";
     notch: "Bocado", "Notch";
     slot: "Ranura", "Slot";
     hole: "Perforación", "Hole";
@@ -344,6 +366,11 @@ texts! {
     feature_length: "largo", "length";
     feature_diameter: "diámetro", "diameter";
     vertical: "Vertical", "Vertical";
+    horizontal: "Horizontal", "Horizontal";
+    guides: "Líneas de guía", "Guide lines";
+    guide_line: "Línea de guía", "Guide line";
+    hint_shape_guide: "Clic para poner una línea de guía (vertical u horizontal, arriba se elige); los cortes se enganchan a ella",
+        "Click to place a guide line (vertical or horizontal, chosen above); cuts snap to it";
 
     // View cube.
     view_front: "Frente", "Front";

@@ -26,8 +26,9 @@ front sketch with dimensions → depth → free 3D editing with snapping → scr
     reference to a face of another part, or a fraction between two faces: that one structure
     stores dimensions, snapping and parametric designs.
   - `solve.rs`: document → boxes. `edit.rs`: moves that keep references. `front.rs`: frame,
-    cells and divisions of the front sketch. `shape.rs`: free-form outline (corners, notches,
-    slots, holes). `joints.rs`, `analysis.rs`: contacts, overlaps, screws and drill access.
+    cells and divisions of the front sketch. `shape.rs`: free-form outline: corner treatments,
+    and figures (rectangle, hole, slot, polygon with a radius per vertex, notch) subtracted
+    from the face with `i_overlay`; also the pure helpers the mouse gestures use. `joints.rs`, `analysis.rs`: contacts, overlaps, screws and drill access.
     `cutlist.rs`: cut list, CSV and stock estimate.
 - `crates/tarugo`: the eframe app (binary `tarugo`). The 3D view renders with wgpu to an
   offscreen texture (color + depth, MSAA) shown as an egui image; dimensions, handles and
@@ -54,5 +55,11 @@ Never capture with ImageMagick's `import -window`: it grabs the pointer waiting 
 - egui samples user textures as gamma-encoded: the scene target is `Rgba8Unorm` and colors
   go in without linearizing.
 - The cut list uses the bounding rectangle of every part; free forms never change it.
+- The free form is edited in a mode of the 3D design stage (`shape_mode.rs`,
+  `App::shape_editor`): the view, the bars and the panel switch to the flat face of one
+  part. Cuts may overlap each other and cross the border; a cut off the part, or cuts that
+  split it, are reported (`Issue::Shape`). A value set with the mouse becomes a plain number;
+  typed formulas stay. Guide lines live in `Shape::guides` (they cut nothing: `is_plain`
+  ignores them, `is_empty` does not).
 - A joint is screwable if one of its parts is at most `analysis::MAX_THROUGH` thick along
   the joint's axis. Edge-to-edge joints (boards side by side) are not asked for screws.

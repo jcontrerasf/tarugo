@@ -12,6 +12,7 @@ use crate::history::Session;
 use crate::i18n::{self, fill, t};
 use crate::prefs::{self, Prefs};
 use crate::scene::Scene;
+use crate::shape_mode::ShapeEdit;
 use crate::theme::{self, pal};
 use crate::tools::{AddOptions, DivideOptions, Drag, ScrewOptions, Tool};
 use crate::ui::cota::CotaEdit;
@@ -90,8 +91,8 @@ pub struct App {
     /// The fastening analysis was asked for: its issues are listed.
     pub analysis_on: bool,
     pub cota_edit: Option<CotaEdit>,
-    /// Part whose free-form outline is being edited.
-    pub shape_editor: Option<PartId>,
+    /// Free-form mode: the part whose outline is being edited in the view.
+    pub shape_editor: Option<ShapeEdit>,
     pub dialog: Option<Dialog>,
     pub pending: Option<Pending>,
     /// Message for the status bar; true if it is an error.
@@ -252,6 +253,7 @@ impl App {
 
     pub fn enter_stage(&mut self, stage: Stage) {
         self.cancel_gesture();
+        self.leave_shape();
         self.stage = stage;
         self.tool = match stage {
             Stage::Screws => Tool::Screw,
@@ -401,8 +403,8 @@ impl App {
             let solved = self.scene.solved.clone();
             self.session.edit(|d| edit::remove_part(d, &solved, id));
             self.session.selected = None;
-            if self.shape_editor == Some(id) {
-                self.shape_editor = None;
+            if self.shape_editor.as_ref().is_some_and(|e| e.part == id) {
+                self.leave_shape();
             }
         }
     }
@@ -501,6 +503,21 @@ impl App {
             self.request(Pending::New);
         }
         if typing {
+            return;
+        }
+        if self.shape_editor.is_some() {
+            if hit(Modifiers::NONE, Key::Delete) || hit(Modifiers::NONE, Key::Backspace) {
+                self.shape_delete();
+            }
+            if hit(Modifiers::NONE, Key::Escape) {
+                self.shape_escape();
+            }
+            if hit(Modifiers::NONE, Key::Enter) {
+                self.shape_close_polygon();
+            }
+            if hit(Modifiers::NONE, Key::F) {
+                self.shape_fit();
+            }
             return;
         }
         if hit(Modifiers::NONE, Key::Delete) || hit(Modifiers::NONE, Key::Backspace) {
@@ -608,12 +625,24 @@ impl eframe::App for App {
                         .stroke(line)
                         .inner_margin(egui::Margin::symmetric(10, 4)),
                 )
-                .show(ui, |ui| self.context_bar(ui));
+                .show(ui, |ui| {
+                    if self.shape_editor.is_some() {
+                        self.shape_context_bar(ui);
+                    } else {
+                        self.context_bar(ui);
+                    }
+                });
             egui::Panel::left("tools")
                 .resizable(false)
                 .exact_size(46.0)
                 .frame(egui::Frame::NONE.fill(p.panel).inner_margin(6))
-                .show(ui, |ui| self.tools_bar(ui));
+                .show(ui, |ui| {
+                    if self.shape_editor.is_some() {
+                        self.shape_tools_bar(ui);
+                    } else {
+                        self.tools_bar(ui);
+                    }
+                });
             egui::Panel::right("side_panel")
                 .resizable(true)
                 .default_size(350.0)
@@ -623,10 +652,22 @@ impl eframe::App for App {
                         .fill(p.panel)
                         .inner_margin(egui::Margin::symmetric(10, 0)),
                 )
-                .show(ui, |ui| self.side_panel(ui));
+                .show(ui, |ui| {
+                    if self.shape_editor.is_some() {
+                        self.shape_panel(ui);
+                    } else {
+                        self.side_panel(ui);
+                    }
+                });
             egui::CentralPanel::default()
                 .frame(egui::Frame::NONE.fill(p.backdrop))
-                .show(ui, |ui| self.canvas(ui));
+                .show(ui, |ui| {
+                    if self.shape_editor.is_some() {
+                        self.shape_canvas(ui);
+                    } else {
+                        self.canvas(ui);
+                    }
+                });
         } else {
             egui::CentralPanel::default()
                 .frame(egui::Frame::NONE.fill(p.window).inner_margin(20))
@@ -635,7 +676,6 @@ impl eframe::App for App {
                     _ => self.cut_list_page(ui),
                 });
         }
-        self.shape_window(&ctx);
         self.dialogs(&ctx);
         self.confirm_dialog(&ctx);
     }

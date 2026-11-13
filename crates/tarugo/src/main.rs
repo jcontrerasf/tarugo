@@ -14,6 +14,7 @@ mod i18n;
 mod icons;
 mod prefs;
 mod scene;
+mod shape_mode;
 mod theme;
 mod tools;
 mod ui;

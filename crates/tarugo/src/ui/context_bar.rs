@@ -70,7 +70,7 @@ impl App {
                 .on_hover_text(t().free_form_help)
                 .clicked()
             {
-                self.shape_editor = Some(id);
+                self.enter_shape(id);
             }
         }
         if ui

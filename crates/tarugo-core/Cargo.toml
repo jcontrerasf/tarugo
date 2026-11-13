@@ -8,5 +8,6 @@ description = "Furniture model for Tarugo: parametric parts, joints, screws anal
 
 [dependencies]
 earcutr = "0.5"
+i_overlay = "9"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
