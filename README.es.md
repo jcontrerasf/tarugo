@@ -22,7 +22,7 @@ español e inglés.
    interior, del exterior o del centro del vecino, y llegar al borde cercano, al centro o al
    borde lejano del tablero nuevo. También se puede repartir un espacio en partes iguales.
 3. **Profundidad** — se pide una vez, al salir del esquema frontal.
-4. **Diseño 3D** — órbita, paneo y zoom. Arrastra una pieza para moverla, o los puntos de sus
+4. **Diseño 3D** — órbita, paneo y zoom. Arrastra la pieza seleccionada para moverla, o los puntos de sus
    caras para alargarla o acortarla. Las caras hacen snap a las caras y centros de otras
    piezas y quedan unidas a ellas (mantén **Alt** para desactivarlo). Agrega tableros y palos
    haciendo clic en la cara donde se apoyan, duplica una pieza justo al lado (varios tableros
@@ -44,7 +44,7 @@ decimales se pueden escribir con coma (`12,5`).
 
 | Ratón | |
 |---|---|
-| Arrastrar con el botón izquierdo en vacío | Orbitar (panear en el frente) |
+| Arrastrar con el botón izquierdo en vacío o sobre una pieza sin seleccionar | Orbitar (panear en el frente) |
 | Arrastrar con el derecho | Orbitar · con Shift, panear |
 | Arrastrar con el del medio | Panear |
 | Rueda | Zoom |

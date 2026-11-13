@@ -132,8 +132,8 @@ texts! {
     fit_view: "Ver todo", "Fit view";
     perspective: "Perspectiva", "Perspective";
     show_screws: "Ver tornillos", "Show screws";
-    hint_select: "Clic para seleccionar; arrastra una pieza para moverla o sus puntos para alargarla. Clic en una cota para escribirla.",
-        "Click to select; drag a part to move it or its dots to stretch it. Click a dimension to type it.";
+    hint_select: "Clic para seleccionar; arrastra la pieza seleccionada para moverla o sus puntos para alargarla. Clic en una cota para escribirla.",
+        "Click to select; drag the selected part to move it or its dots to stretch it. Click a dimension to type it.";
     hint_divide: "Clic en un espacio para dividirlo; luego escribe la cota exacta.",
         "Click a space to divide it; then type the exact dimension.";
     hint_add: "Clic en la cara de una pieza para apoyar ahí la nueva.",

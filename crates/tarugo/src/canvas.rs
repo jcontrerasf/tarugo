@@ -235,9 +235,9 @@ impl App {
                     (self.handle_at(&camera, press), self.session.selected)
                 {
                     kind = Some((part, DragKind::Face { axis, side }, center));
-                } else if let Some(h) = pressed {
-                    self.session.select(Some(h.part));
-                    self.highlight.clear();
+                } else if let Some(h) = pressed.filter(|h| self.session.selected == Some(h.part)) {
+                    // Only the part already selected moves: dragging over any other
+                    // turns the view, so orbiting never shifts a part by accident.
                     let doc = self.doc();
                     let axes: Vec<usize> = if self.is_locked(h.part) {
                         Vec::new()

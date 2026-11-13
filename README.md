@@ -22,7 +22,7 @@ Spanish and English.
    neighbour, and reach the near edge, the center or the far edge of the new board. Or divide
    a space in equal parts.
 3. **Depth** — asked once, when leaving the front sketch.
-4. **3D design** — orbit, pan and zoom. Drag a part to move it, or the dots on its faces to
+4. **3D design** — orbit, pan and zoom. Drag the selected part to move it, or the dots on its faces to
    stretch it. Faces snap to the faces and middles of other parts and stay attached to them
    (hold **Alt** to turn snapping off). Add boards and sticks by clicking the face they sit
    on, duplicate a part right beside itself (several boards for a top), and give a part a
@@ -41,7 +41,7 @@ The frame creates `W`, `H` and `D`; add your own in the panel on the right.
 
 | Mouse | |
 |---|---|
-| Left drag on empty space | Orbit (pan in the front sketch) |
+| Left drag on empty space or on a part that is not selected | Orbit (pan in the front sketch) |
 | Right drag | Orbit · with Shift, pan |
 | Middle drag | Pan |
 | Wheel | Zoom |
