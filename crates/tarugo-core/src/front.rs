@@ -3,6 +3,7 @@
 use crate::expr::format_number;
 use crate::model::{DEPTH, Dim, Document, End, Extent, FaceRef, HEIGHT, PartId, Side, WIDTH};
 use crate::solve::Solved;
+use serde::{Deserialize, Serialize};
 
 /// The four boards of the starting frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -98,6 +99,85 @@ pub fn new_frame(
         bottom,
         top,
     }
+}
+
+/// Which boards of the frame run past the others at its corners.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FrameStyle {
+    /// The sides take the full height; bottom and top go between them.
+    #[default]
+    SidesOutside,
+    /// Bottom and top take the full width; the sides go between them, as long as every
+    /// vertical division.
+    CapsOutside,
+}
+
+fn frame_spans(frame: &Frame, style: FrameStyle) -> (Extent, Extent) {
+    let (lo, hi) = (End::abs(0.0), |name: &str| End::abs(name));
+    match style {
+        FrameStyle::SidesOutside => (
+            Extent::Span { lo, hi: hi(HEIGHT) },
+            Extent::Span {
+                lo: End::at(frame.left, Side::Max),
+                hi: End::at(frame.right, Side::Min),
+            },
+        ),
+        FrameStyle::CapsOutside => (
+            Extent::Span {
+                lo: End::at(frame.bottom, Side::Max),
+                hi: End::at(frame.top, Side::Min),
+            },
+            Extent::Span { lo, hi: hi(WIDTH) },
+        ),
+    }
+}
+
+/// Makes the corners of the frame as `style` says: the height of the sides and the width
+/// of bottom and top change, everything attached to them follows. Screws between two
+/// boards of the frame are dropped: their joints are not the same any more.
+pub fn set_frame_style(doc: &mut Document, frame: &Frame, style: FrameStyle) {
+    let (sides, caps) = frame_spans(frame, style);
+    for (id, axis, span) in [
+        (frame.left, 1, &sides),
+        (frame.right, 1, &sides),
+        (frame.bottom, 0, &caps),
+        (frame.top, 0, &caps),
+    ] {
+        if let Some(part) = doc.part_mut(id) {
+            part.axes[axis] = span.clone();
+        }
+    }
+    let boards = [frame.left, frame.right, frame.bottom, frame.top];
+    doc.screws
+        .retain(|s| !(boards.contains(&s.through) && boards.contains(&s.into)));
+}
+
+/// The frame of a document and how its corners are, if its four boards are still as
+/// [`new_frame`] or [`set_frame_style`] left them.
+pub fn find_frame(doc: &Document) -> Option<(Frame, FrameStyle)> {
+    let thick_at = |axis: usize, anchor: End, align: Side| {
+        let wanted = Extent::Thick { anchor, align };
+        let mut found = doc.parts.iter().filter(|p| p.axes[axis] == wanted);
+        let part = found.next()?;
+        found.next().is_none().then_some(part.id)
+    };
+    let frame = Frame {
+        left: thick_at(0, End::abs(0.0), Side::Min)?,
+        right: thick_at(0, End::abs(WIDTH), Side::Max)?,
+        bottom: thick_at(1, End::abs(0.0), Side::Min)?,
+        top: thick_at(1, End::abs(HEIGHT), Side::Max)?,
+    };
+    [FrameStyle::SidesOutside, FrameStyle::CapsOutside]
+        .into_iter()
+        .find(|style| {
+            let (sides, caps) = frame_spans(&frame, *style);
+            [(frame.left, 1, &sides), (frame.right, 1, &sides)]
+                .into_iter()
+                .chain([(frame.bottom, 0, &caps), (frame.top, 0, &caps)])
+                .all(|(id, axis, span)| doc.part(id).is_some_and(|p| p.axes[axis] == *span))
+        })
+        .map(|style| (frame, style))
 }
 
 /// An empty rectangle of the front, with the parts that close it.
@@ -288,6 +368,56 @@ mod tests {
         let top = s.boxes[&frame.top];
         assert_eq!((top.min[0], top.max[0]), (18.0, 782.0));
         assert_eq!((top.min[1], top.max[1]), (582.0, 600.0));
+    }
+
+    #[test]
+    fn the_corners_of_the_frame_can_go_either_way() {
+        let (mut doc, frame) = framed();
+        assert_eq!(find_frame(&doc), Some((frame, FrameStyle::SidesOutside)));
+        // A division and a screw between two boards of the frame, before the change.
+        let s = solve(&doc);
+        let cell = find_cell(&doc, &s, 400.0, 300.0).unwrap();
+        let division = divide(
+            &mut doc,
+            &cell,
+            0,
+            &Cota {
+                from_hi: false,
+                ref_side: Side::Max,
+                align: Side::Min,
+                distance: Dim::num(300.0),
+            },
+            "d",
+        );
+        doc.screws.push(crate::model::Screw {
+            id: 1,
+            through: frame.left,
+            into: frame.bottom,
+            u: 0.0,
+            v: 0.0,
+        });
+        set_frame_style(&mut doc, &frame, FrameStyle::CapsOutside);
+        assert_eq!(find_frame(&doc), Some((frame, FrameStyle::CapsOutside)));
+        assert!(doc.screws.is_empty());
+        let s = solve(&doc);
+        assert!(s.errors.is_empty());
+        let b = s.bounds().unwrap();
+        assert_eq!((b.min, b.max), ([0.0; 3], [800.0, 600.0, 300.0]));
+        let top = s.boxes[&frame.top];
+        assert_eq!((top.min[0], top.max[0]), (0.0, 800.0));
+        // Sides and division: all between bottom and top, the same length.
+        for id in [frame.left, frame.right, division] {
+            let b = s.boxes[&id];
+            assert_eq!((b.min[1], b.max[1]), (18.0, 582.0));
+        }
+        set_frame_style(&mut doc, &frame, FrameStyle::SidesOutside);
+        assert_eq!(find_frame(&doc), Some((frame, FrameStyle::SidesOutside)));
+        // A frame that was changed by hand is left alone.
+        doc.part_mut(frame.left).unwrap().axes[1] = Extent::Span {
+            lo: End::abs(0.0),
+            hi: End::abs(500.0),
+        };
+        assert_eq!(find_frame(&doc), None);
     }
 
     #[test]

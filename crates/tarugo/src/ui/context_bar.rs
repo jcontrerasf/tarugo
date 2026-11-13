@@ -1,6 +1,7 @@
 //! Context bar: the options of the current tool.
 
 use eframe::egui::{self, RichText, Ui};
+use tarugo_core::front::{self, FrameStyle};
 use tarugo_core::model::AXIS_NAMES;
 
 use crate::app::{App, Stage};
@@ -20,6 +21,9 @@ impl App {
                 Tool::AddBoard | Tool::AddStick => self.add_options(ui),
                 Tool::Screw => {}
             }
+            if self.stage == Stage::Front {
+                self.frame_options(ui);
+            }
             if self.stage == Stage::Screws {
                 self.screw_options(ui);
             } else {
@@ -30,6 +34,39 @@ impl App {
                 );
             }
         });
+    }
+
+    /// Which boards run past the others at the corners of the frame. Hidden once the
+    /// frame was changed by hand.
+    fn frame_options(&mut self, ui: &mut Ui) {
+        let Some((frame, current)) = front::find_frame(self.doc()) else {
+            return;
+        };
+        ui.separator();
+        ui.label(theme::soft(t().frame_style));
+        let mut style = current;
+        for (choice, name, help) in [
+            (
+                FrameStyle::SidesOutside,
+                t().frame_sides_outside,
+                t().frame_sides_outside_help,
+            ),
+            (
+                FrameStyle::CapsOutside,
+                t().frame_caps_outside,
+                t().frame_caps_outside_help,
+            ),
+        ] {
+            ui.selectable_value(&mut style, choice, name)
+                .on_hover_text(help);
+        }
+        if style != current {
+            self.cancel_gesture();
+            self.session
+                .edit(|d| front::set_frame_style(d, &frame, style));
+            // The next new design starts the same way.
+            self.prefs.frame_style = style;
+        }
     }
 
     fn select_options(&mut self, ui: &mut Ui) {

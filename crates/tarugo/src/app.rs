@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use eframe::egui::{self, Key, KeyboardShortcut, Modifiers, Pos2, Rect};
 use tarugo_core::edit;
-use tarugo_core::front;
+use tarugo_core::front::{self, FrameStyle};
 use tarugo_core::material::MaterialId;
 use tarugo_core::model::{DEPTH, Dim, Document, FaceRef, PartId};
 
@@ -115,7 +115,7 @@ impl App {
         theme::install(&cc.egui_ctx, prefs.theme);
         cc.egui_ctx.set_zoom_factor(prefs.ui_zoom.clamp(0.5, 3.0));
         let mut app = App {
-            session: Session::new(new_document(), None),
+            session: Session::new(new_document(prefs.frame_style), None),
             scene: Scene::default(),
             scene_revision: None,
             stage: Stage::Front,
@@ -309,7 +309,10 @@ impl App {
 
     pub fn run_pending(&mut self, action: Pending) {
         match action {
-            Pending::New => self.replace_document(new_document(), None),
+            Pending::New => {
+                let doc = new_document(self.prefs.frame_style);
+                self.replace_document(doc, None);
+            }
             Pending::Open(path) => self.open_path(&path),
             Pending::Close => self.close_allowed = true,
         }
@@ -556,11 +559,12 @@ impl App {
 }
 
 /// A new design: a square frame out of an 18 mm board.
-pub fn new_document() -> Document {
+pub fn new_document(style: FrameStyle) -> Document {
     let mut doc = Document::new();
     doc.materials[0].name = t().default_material.to_string();
     let names = [t().part_left, t().part_right, t().part_bottom, t().part_top];
-    front::new_frame(&mut doc, 600.0, 600.0, 400.0, names);
+    let frame = front::new_frame(&mut doc, 600.0, 600.0, 400.0, names);
+    front::set_frame_style(&mut doc, &frame, style);
     doc
 }
 

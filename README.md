@@ -17,7 +17,9 @@ Spanish and English.
    and width are optional: they only serve to estimate how much to buy, since many cutting
    services already compute that.
 2. **Front** — starts from a square frame of the main board. Set width and height by typing
-   on the dimensions or dragging the sides. The divide tools add vertical or horizontal boards
+   on the dimensions or dragging the sides, and choose its corners: sides outside (bottom and
+   top between them) or bottom and top outside (the sides between them, as long as every
+   vertical division). The divide tools add vertical or horizontal boards
    placed by a dimension that can start at the inner edge, the outer edge or the center of the
    neighbour, and reach the near edge, the center or the far edge of the new board. Or divide
    a space in equal parts.

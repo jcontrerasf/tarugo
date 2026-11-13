@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+use tarugo_core::front::FrameStyle;
 
 use crate::i18n::Lang;
 use crate::theme::ThemeChoice;
@@ -21,6 +22,8 @@ pub struct Prefs {
     pub perspective: bool,
     /// Screws drawn in the 3D design (in their own stage they always are).
     pub show_screws: bool,
+    /// How the corners of the frame of a new design are made.
+    pub frame_style: FrameStyle,
 }
 
 impl Default for Prefs {
@@ -32,6 +35,7 @@ impl Default for Prefs {
             ui_zoom: 1.0,
             perspective: true,
             show_screws: true,
+            frame_style: FrameStyle::default(),
         }
     }
 }

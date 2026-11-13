@@ -17,7 +17,9 @@ español e inglés.
    el ancho de venta son opcionales: solo sirven para estimar cuánto comprar, porque muchos
    servicios de corte ya lo calculan.
 2. **Frente** — parte de un marco cuadrado del tablero principal. El ancho y el alto se
-   definen escribiendo en las cotas o arrastrando los laterales. Las herramientas de división
+   definen escribiendo en las cotas o arrastrando los laterales, y se eligen sus esquinas:
+   laterales por fuera (base y tapa entre ellos) o base y tapa por fuera (los laterales entre
+   ellas, del mismo largo que las divisiones verticales). Las herramientas de división
    agregan tableros verticales u horizontales ubicados por una cota que puede partir del borde
    interior, del exterior o del centro del vecino, y llegar al borde cercano, al centro o al
    borde lejano del tablero nuevo. También se puede repartir un espacio en partes iguales.

@@ -183,6 +183,13 @@ texts! {
     dir_above: "Arriba", "Above";
     dir_behind: "Atrás", "Behind";
     dir_in_front: "Adelante", "In front";
+    frame_style: "Esquinas:", "Corners:";
+    frame_sides_outside: "Laterales por fuera", "Sides outside";
+    frame_sides_outside_help: "Los laterales llegan de abajo a arriba; base y tapa van entre ellos",
+        "The sides run from bottom to top; bottom and top go between them";
+    frame_caps_outside: "Base y tapa por fuera", "Bottom and top outside";
+    frame_caps_outside_help: "Base y tapa van de lado a lado; los laterales quedan entre ellas, del mismo largo que las divisiones verticales",
+        "Bottom and top run from side to side; the sides go between them, as long as the vertical divisions";
     free_form: "Forma libre", "Free form";
     free_form_help: "Esquinas redondeadas y cortes: rectángulos, perforaciones, ranuras, polígonos y bocados",
         "Rounded corners and cuts: rectangles, holes, slots, polygons and notches";
