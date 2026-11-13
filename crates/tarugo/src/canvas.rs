@@ -173,9 +173,10 @@ impl App {
         self.paint_marks(&painter, &camera);
         self.paint_preview(&painter, &camera, &preview);
         self.paint_screws(&painter, &camera);
-        self.paint_handles(&painter, &camera, response.hover_pos());
         let cotas = self.cotas();
         self.paint_cotas(ui, &camera, &cotas);
+        // Over the dimensions: a label never hides a handle.
+        self.paint_handles(&painter, &camera, response.hover_pos());
         if self.stage != Stage::Front {
             self.view_cube(ui, rect);
         }
@@ -731,7 +732,10 @@ impl App {
             painter.line_segment([b - tick, b + tick], stroke);
         }
         let galley = painter.layout_no_wrap(cota.text.clone(), FontId::proportional(12.5), color);
-        let label = Rect::from_center_size(a + (b - a) * 0.5, galley.size() + Vec2::new(10.0, 4.0));
+        let label = Rect::from_center_size(
+            a + (b - a) * cota.label_at,
+            galley.size() + Vec2::new(10.0, 4.0),
+        );
         let editable = cota.target.is_some();
         let fill = if hovered && editable {
             p.accent_soft
@@ -750,10 +754,53 @@ impl App {
         Some(label)
     }
 
+    /// Slides the labels along their lines so they cover neither each other nor the
+    /// handles of the selection.
+    fn spread_labels(
+        &self,
+        painter: &egui::Painter,
+        camera: &Camera,
+        cotas: &[CotaView],
+    ) -> Vec<CotaView> {
+        let mut taken: Vec<Rect> = self
+            .handles()
+            .into_iter()
+            .filter_map(|h| camera.project(self.view_rect, h.2))
+            .map(|pos| Rect::from_center_size(pos, Vec2::splat(2.0 * GRAB)))
+            .collect();
+        let mut out = cotas.to_vec();
+        for cota in &mut out {
+            let (Some(a), Some(b)) = (
+                camera.project(self.view_rect, cota.a),
+                camera.project(self.view_rect, cota.b),
+            ) else {
+                continue;
+            };
+            let size = painter
+                .layout_no_wrap(
+                    cota.text.clone(),
+                    FontId::proportional(12.5),
+                    Color32::WHITE,
+                )
+                .size()
+                + Vec2::new(12.0, 6.0);
+            let place = |at: f32| Rect::from_center_size(a + (b - a) * at, size);
+            // The middle first, then further and further from it.
+            let at = [0.5, 0.32, 0.68, 0.18, 0.82]
+                .into_iter()
+                .find(|at| !taken.iter().any(|r| r.intersects(place(*at))))
+                .unwrap_or(0.5);
+            cota.label_at = at;
+            taken.push(place(at));
+        }
+        out
+    }
+
     /// Dimensions of the furniture and of the selection; the ones with a target open an
     /// inline editor when clicked.
     fn paint_cotas(&mut self, ui: &mut Ui, camera: &Camera, cotas: &[CotaView]) {
         let painter = ui.painter_at(self.view_rect);
+        let cotas = self.spread_labels(&painter, camera, cotas);
         let mut open = None;
         for (n, cota) in cotas.iter().enumerate() {
             // First pass without hover to learn where the label is.

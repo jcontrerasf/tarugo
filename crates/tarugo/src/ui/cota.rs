@@ -5,6 +5,7 @@ use glam::Vec3;
 use tarugo_core::edit;
 use tarugo_core::expr::format_number;
 use tarugo_core::front;
+use tarugo_core::joints::other_axes;
 use tarugo_core::model::{DEPTH, Dim, End, Extent, HEIGHT, PartId, WIDTH};
 
 use crate::app::{App, Stage};
@@ -40,6 +41,8 @@ pub struct CotaView {
     pub edit_text: String,
     /// A derived measure, drawn discreetly.
     pub soft: bool,
+    /// Where along the line the label sits (0 at `a`, 1 at `b`).
+    pub label_at: f32,
 }
 
 impl CotaView {
@@ -51,6 +54,7 @@ impl CotaView {
             target: None,
             edit_text: String::new(),
             soft: false,
+            label_at: 0.5,
         }
     }
 }
@@ -228,11 +232,35 @@ impl App {
                 }
                 Extent::Span { .. } if !front => {
                     let length = b.max[axis] - b.min[axis];
-                    let mut view = CotaView::plain(
-                        on_axis(b.min[axis], 0.5),
-                        on_axis(b.max[axis], 0.5),
-                        length,
-                    );
+                    // Along the edge that shows most to the side, a little off it: through
+                    // the middle the three lengths would cross over the handles.
+                    let [i, j] = other_axes(axis);
+                    let middle = camera.project(self.view_rect, vec3(center));
+                    let (_, edge) = [(0, 0), (1, 0), (0, 1), (1, 1)]
+                        .into_iter()
+                        .map(|(hi_i, hi_j)| {
+                            let mut p = center;
+                            p[i] = if hi_i == 1 { b.max[i] } else { b.min[i] };
+                            p[j] = if hi_j == 1 { b.max[j] } else { b.min[j] };
+                            let out_i = if hi_i == 1 { 1.0 } else { -1.0 };
+                            let out_j = if hi_j == 1 { 1.0 } else { -1.0 };
+                            p[i] += out_i * off * 0.3;
+                            p[j] += out_j * off * 0.3;
+                            let away = middle
+                                .zip(camera.project(self.view_rect, vec3(p)))
+                                .map_or(0.0, |(m, e)| m.distance(e));
+                            (away, p)
+                        })
+                        .fold(
+                            (-1.0, center),
+                            |best, c| if c.0 > best.0 { c } else { best },
+                        );
+                    let at = |value: f64| {
+                        let mut p = edge;
+                        p[axis] = value;
+                        vec3(p)
+                    };
+                    let mut view = CotaView::plain(at(b.min[axis]), at(b.max[axis]), length);
                     view.target = editable.then_some(CotaTarget::Length {
                         part: part.id,
                         axis,
