@@ -19,6 +19,8 @@ pub struct Prefs {
     pub recent: Vec<PathBuf>,
     pub ui_zoom: f32,
     pub perspective: bool,
+    /// Screws drawn in the 3D design (in their own stage they always are).
+    pub show_screws: bool,
 }
 
 impl Default for Prefs {
@@ -29,6 +31,7 @@ impl Default for Prefs {
             recent: Vec::new(),
             ui_zoom: 1.0,
             perspective: true,
+            show_screws: true,
         }
     }
 }

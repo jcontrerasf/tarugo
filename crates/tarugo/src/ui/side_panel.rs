@@ -173,6 +173,21 @@ impl App {
                     &format_number(self.doc().settings.drill_length),
                 ],
             ),
+            Issue::Cramped {
+                a,
+                b,
+                blocker,
+                room,
+            } => fill(
+                t().issue_cramped,
+                &[
+                    &name(a),
+                    &name(b),
+                    &name(blocker),
+                    &format_number(*room),
+                    &format_number(self.doc().settings.drill_width / 2.0),
+                ],
+            ),
             Issue::OrphanScrew(_) => t().issue_orphan_screw.to_string(),
         }
     }

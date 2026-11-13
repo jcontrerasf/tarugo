@@ -228,6 +228,8 @@ pub struct Screw {
 pub struct Settings {
     /// Room a drill with its bit needs behind a screw (mm).
     pub drill_length: f64,
+    /// Width of the body of the drill (mm): it needs half of it free around a screw.
+    pub drill_width: f64,
     /// Width of the saw cut (mm), for the stock estimate.
     pub kerf: f64,
 }
@@ -236,6 +238,7 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             drill_length: 220.0,
+            drill_width: 60.0,
             kerf: 3.0,
         }
     }

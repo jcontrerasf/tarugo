@@ -131,6 +131,7 @@ texts! {
     tool_screw: "Poner tornillos", "Place screws";
     fit_view: "Ver todo", "Fit view";
     perspective: "Perspectiva", "Perspective";
+    show_screws: "Ver tornillos", "Show screws";
     hint_select: "Clic para seleccionar; arrastra una pieza para moverla o sus puntos para alargarla. Clic en una cota para escribirla.",
         "Click to select; drag a part to move it or its dots to stretch it. Click a dimension to type it.";
     hint_divide: "Clic en un espacio para dividirlo; luego escribe la cota exacta.",
@@ -200,6 +201,9 @@ texts! {
     drill_length: "Largo del taladro", "Drill length";
     drill_length_help: "Espacio que necesita el taladro con su punta detrás del tornillo",
         "Room the drill with its bit needs behind the screw";
+    drill_width: "Ancho", "Width";
+    drill_width_help: "Ancho del cuerpo del taladro: necesita la mitad libre alrededor del tornillo",
+        "Width of the body of the drill: it needs half of it free around the screw";
     screw_total: "{} tornillos", "{} screws";
     no_joint_behind: "No hay una unión detrás de esa cara: haz clic en la cara por donde entra el tornillo",
         "There is no joint behind that face: click the face the screw goes in through";
@@ -266,6 +270,8 @@ texts! {
         "Joint {} – {}: the drill cannot get in because {} covers the entry. Use dowels, a dado, or shift one of the parts.";
     issue_tight: "Unión {} – {}: solo hay {} mm para el taladro (necesita {} mm)",
         "Joint {} – {}: only {} mm of room for the drill (it needs {} mm)";
+    issue_cramped: "Unión {} – {}: {} queda a {} mm del tornillo y el taladro necesita {} mm alrededor. Separa más las piezas o usa una punta larga.",
+        "Joint {} – {}: {} is {} mm from the screw and the drill needs {} mm around it. Move the parts further apart or use a long bit.";
     issue_orphan_screw: "Hay tornillos en piezas que ya no se tocan", "There are screws in parts that no longer touch";
 
     // Materials.

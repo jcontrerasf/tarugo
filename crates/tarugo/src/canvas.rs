@@ -295,7 +295,7 @@ impl App {
             Tool::Select => {
                 if clicked {
                     let screw = hover_pos
-                        .filter(|_| self.stage != Stage::Front)
+                        .filter(|_| self.screws_visible())
                         .and_then(|p| self.screw_at(&camera, p));
                     self.highlight.clear();
                     match screw {
@@ -645,8 +645,17 @@ impl App {
         painter.line_segment([a - Vec2::new(0.0, r), a + Vec2::new(0.0, r)], cross);
     }
 
+    /// Screws show in their stage, and in the 3D design unless hidden.
+    fn screws_visible(&self) -> bool {
+        match self.stage {
+            Stage::Screws => true,
+            Stage::Design => self.prefs.show_screws,
+            _ => false,
+        }
+    }
+
     fn paint_screws(&self, painter: &egui::Painter, camera: &Camera) {
-        if self.stage == Stage::Front {
+        if !self.screws_visible() {
             return;
         }
         let p = pal();
@@ -765,29 +774,38 @@ impl App {
         }
     }
 
-    /// Small cube at the corner that shows the orientation; its faces set standard views.
+    /// Small cube at the corner that shows the orientation. Each face is split 3 × 3: the
+    /// middle sets the view of that face, the borders the view from an edge and the corners
+    /// the one from a vertex. Dragging it orbits.
     fn view_cube(&mut self, ui: &mut Ui, rect: Rect) {
+        /// Where a face (from -1 to 1) is cut into its zones.
+        const CUTS: [f32; 4] = [-1.0, -0.56, 0.56, 1.0];
         let p = pal();
-        let size = 34.0;
+        let size = 26.0;
         let center = Pos2::new(rect.right() - 62.0, rect.top() + 62.0);
-        let area = Rect::from_center_size(center, Vec2::splat(size * 3.4));
-        let response = ui.interact(area, ui.scope_id().with("view_cube"), Sense::click());
+        let area = Rect::from_center_size(center, Vec2::splat(size * 3.6));
+        let response = ui.interact(
+            area,
+            ui.scope_id().with("view_cube"),
+            Sense::click_and_drag(),
+        );
         let painter = ui.painter_at(rect);
         let camera = self.camera;
         let project =
             |v: Vec3| center + Vec2::new(v.dot(camera.right()), -v.dot(camera.up())) * size;
-        // Faces: normal, name and the view (yaw, pitch) they give.
-        let faces: [(Vec3, &str, f32, f32); 6] = [
-            (Vec3::Z, t().view_front, 0.0, 0.0),
-            (-Vec3::Z, t().view_back, std::f32::consts::PI, 0.0),
-            (Vec3::X, t().view_right, std::f32::consts::FRAC_PI_2, 0.0),
-            (-Vec3::X, t().view_left, -std::f32::consts::FRAC_PI_2, 0.0),
-            (Vec3::Y, t().view_top, camera.yaw, 1.55),
-            (-Vec3::Y, t().view_bottom, camera.yaw, -1.55),
+        let faces: [(Vec3, &str); 6] = [
+            (Vec3::Z, t().view_front),
+            (-Vec3::Z, t().view_back),
+            (Vec3::X, t().view_right),
+            (-Vec3::X, t().view_left),
+            (Vec3::Y, t().view_top),
+            (-Vec3::Y, t().view_bottom),
         ];
-        let pointer = response.hover_pos();
-        let mut picked = None;
-        for (normal, name, yaw, pitch) in faces {
+        // Zones of the faces turned to the camera: outline, the direction they look
+        // from and whether they are the middle of a face.
+        let mut zones: Vec<([Pos2; 4], Vec3, bool)> = Vec::new();
+        let mut labels = Vec::new();
+        for (normal, name) in faces {
             let facing = normal.dot(camera.back());
             if facing <= 0.05 {
                 continue;
@@ -799,41 +817,60 @@ impl App {
                 Vec3::Y
             };
             let v = normal.cross(u);
-            let quad: Vec<Pos2> = [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)]
-                .iter()
-                .map(|(a, b)| project(normal + u * *a + v * *b))
-                .collect();
-            let inside = pointer.is_some_and(|pos| {
-                (0..4).all(|i| {
-                    let (a, b) = (quad[i], quad[(i + 1) % 4]);
-                    (b - a).x * (pos - a).y - (b - a).y * (pos - a).x >= 0.0
-                }) || (0..4).all(|i| {
-                    let (a, b) = (quad[i], quad[(i + 1) % 4]);
-                    (b - a).x * (pos - a).y - (b - a).y * (pos - a).x <= 0.0
-                })
-            });
-            let fill = if inside { p.accent_soft } else { p.window };
+            for i in 0..3 {
+                for j in 0..3 {
+                    let corner = |a: f32, b: f32| project(normal + u * a + v * b);
+                    let (a0, a1, b0, b1) = (CUTS[i], CUTS[i + 1], CUTS[j], CUTS[j + 1]);
+                    zones.push((
+                        [
+                            corner(a0, b0),
+                            corner(a1, b0),
+                            corner(a1, b1),
+                            corner(a0, b1),
+                        ],
+                        normal + u * (i as f32 - 1.0) + v * (j as f32 - 1.0),
+                        i == 1 && j == 1,
+                    ));
+                }
+            }
+            if facing > 0.45 {
+                labels.push((project(normal), name));
+            }
+        }
+        // An edge or a corner spans several faces: all its zones light up.
+        let picked = response
+            .hover_pos()
+            .and_then(|pos| zones.iter().find(|z| quad_contains(&z.0, pos)))
+            .map(|z| z.1);
+        for (quad, direction, middle) in &zones {
+            let fill = if picked == Some(*direction) {
+                p.accent_soft
+            } else if *middle {
+                p.window
+            } else {
+                p.panel
+            };
             painter.add(Shape::convex_polygon(
-                quad,
+                quad.to_vec(),
                 fill,
                 Stroke::new(1.0, p.border),
             ));
-            if facing > 0.45 {
-                painter.text(
-                    project(normal),
-                    Align2::CENTER_CENTER,
-                    name,
-                    FontId::proportional(10.5),
-                    p.text_soft,
-                );
-            }
-            if inside {
-                picked = Some((yaw, pitch));
-            }
         }
-        if response.clicked()
-            && let Some((yaw, pitch)) = picked
+        for (pos, name) in labels {
+            painter.text(
+                pos,
+                Align2::CENTER_CENTER,
+                name,
+                FontId::proportional(10.5),
+                p.text_soft,
+            );
+        }
+        if response.dragged() {
+            self.camera.orbit(response.drag_delta());
+        } else if response.clicked()
+            && let Some(direction) = picked
         {
+            let (yaw, pitch) = view_angles(direction, camera.yaw);
             self.look_from(yaw, pitch);
         }
     }
@@ -865,3 +902,70 @@ impl App {
 
 /// How far into the second part a screw is drawn (mm).
 const SCREW_DEPTH: f32 = 30.0;
+
+/// Is the point inside a convex quad? Either winding.
+fn quad_contains(quad: &[Pos2; 4], pos: Pos2) -> bool {
+    let side = |i: usize| {
+        let (a, b) = (quad[i], quad[(i + 1) % 4]);
+        (b - a).x * (pos - a).y - (b - a).y * (pos - a).x
+    };
+    (0..4).all(|i| side(i) >= 0.0) || (0..4).all(|i| side(i) <= 0.0)
+}
+
+/// Yaw and pitch of the camera to look from `direction` (from the target to the eye).
+/// Straight from above or below the yaw stays as it is.
+fn view_angles(direction: Vec3, yaw: f32) -> (f32, f32) {
+    let d = direction.normalize_or_zero();
+    let pitch = d.y.clamp(-1.0, 1.0).asin().clamp(-1.55, 1.55);
+    if d.x.abs() < 1e-4 && d.z.abs() < 1e-4 {
+        (yaw, pitch)
+    } else {
+        (d.x.atan2(d.z), pitch)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn view_angles_look_from_faces_edges_and_corners() {
+        let close =
+            |a: (f32, f32), b: (f32, f32)| (a.0 - b.0).abs() < 1e-4 && (a.1 - b.1).abs() < 1e-4;
+        let quarter = std::f32::consts::FRAC_PI_4;
+        assert!(close(view_angles(Vec3::Z, 0.7), (0.0, 0.0)));
+        assert!(close(view_angles(Vec3::X, 0.7), (2.0 * quarter, 0.0)));
+        // From above the yaw is kept.
+        assert!(close(view_angles(Vec3::Y, 0.7), (0.7, 1.55)));
+        // The edge between the front and the top; the front, right, top corner.
+        assert!(close(
+            view_angles(Vec3::new(0.0, 1.0, 1.0), 0.7),
+            (0.0, quarter)
+        ));
+        let corner = view_angles(Vec3::ONE, 0.7);
+        assert!(close(corner, (quarter, (1.0f32 / 3.0f32.sqrt()).asin())));
+        // The camera ends up looking from that direction.
+        let cam = Camera {
+            yaw: corner.0,
+            pitch: corner.1,
+            ..Camera::default()
+        };
+        assert!((cam.back() - Vec3::ONE.normalize()).length() < 1e-4);
+    }
+
+    #[test]
+    fn quad_contains_either_winding() {
+        let quad = [
+            Pos2::new(0.0, 0.0),
+            Pos2::new(10.0, 0.0),
+            Pos2::new(10.0, 10.0),
+            Pos2::new(0.0, 10.0),
+        ];
+        let mut reversed = quad;
+        reversed.reverse();
+        for q in [quad, reversed] {
+            assert!(quad_contains(&q, Pos2::new(5.0, 5.0)));
+            assert!(!quad_contains(&q, Pos2::new(12.0, 5.0)));
+        }
+    }
+}

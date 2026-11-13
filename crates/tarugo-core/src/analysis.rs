@@ -101,6 +101,14 @@ pub enum Issue {
     },
     /// There is less room than the drill needs.
     Tight { a: PartId, b: PartId, room: f64 },
+    /// A part beside the screws leaves less room around them than the body of the drill
+    /// needs: `room` from the screw to that part.
+    Cramped {
+        a: PartId,
+        b: PartId,
+        blocker: PartId,
+        room: f64,
+    },
     /// A screw whose parts no longer touch.
     OrphanScrew(ScrewId),
 }
@@ -118,7 +126,9 @@ impl Issue {
             Issue::NoScrews { a, b } | Issue::SingleScrew { a, b } | Issue::Tight { a, b, .. } => {
                 vec![*a, *b]
             }
-            Issue::Blocked { a, b, blocker } => vec![*a, *b, *blocker],
+            Issue::Blocked { a, b, blocker } | Issue::Cramped { a, b, blocker, .. } => {
+                vec![*a, *b, *blocker]
+            }
             Issue::OrphanScrew(_) => Vec::new(),
         }
     }
@@ -173,6 +183,9 @@ pub enum Access {
     Free,
     /// Parts closer than the drill is long cover it; the closest leaves this room.
     Tight(f64),
+    /// The way in is clear, but a part beside it leaves only this room around the screw
+    /// for the body of the drill.
+    Cramped(PartId, f64),
     /// A part right against the entry face covers it.
     Blocked(PartId),
 }
@@ -279,6 +292,72 @@ fn access(
     Access::Free
 }
 
+/// The part closest to the axis of a screw at `at` (on the two axes across the joint's)
+/// that the body of the drill, `width` across, would run into; with the room it leaves.
+fn beside(
+    doc: &Document,
+    solved: &Solved,
+    joint: &Joint,
+    through: PartId,
+    at: [f64; 2],
+    drill: f64,
+    width: f64,
+) -> Option<(PartId, f64)> {
+    let tb = solved.get(through)?;
+    let axis = joint.axis;
+    let across = other_axes(axis);
+    // Where the drill is, along the axis.
+    let (lo, hi) = if joint.a == through {
+        (tb.min[axis] - drill, tb.min[axis])
+    } else {
+        (tb.max[axis], tb.max[axis] + drill)
+    };
+    doc.parts
+        .iter()
+        .filter(|part| !joint.has(part.id))
+        .filter_map(|part| {
+            let b = solved.get(part.id)?;
+            if b.max[axis].min(hi) - b.min[axis].max(lo) <= EPS {
+                return None;
+            }
+            // Distance from the screw to the part, across the axis.
+            let room = (0..2)
+                .map(|k| (b.min[across[k]] - at[k]).max(at[k] - b.max[across[k]]))
+                .fold(0.0, f64::max);
+            (room < width / 2.0 - EPS).then_some((part.id, room))
+        })
+        .min_by(|x, y| x.1.total_cmp(&y.1))
+}
+
+/// Access for one screw at `at`: the way in over `region` around it, and the room for the
+/// body of the drill.
+fn screw_access(
+    doc: &Document,
+    solved: &Solved,
+    joint: &Joint,
+    through: PartId,
+    region: Rect,
+    at: [f64; 2],
+) -> Access {
+    let settings = &doc.settings;
+    match access(doc, solved, joint, through, region, settings.drill_length) {
+        Access::Free => beside(
+            doc,
+            solved,
+            joint,
+            through,
+            at,
+            settings.drill_length,
+            settings.drill_width,
+        )
+        .map_or(Access::Free, |(part, room)| Access::Cramped(part, room)),
+        other => other,
+    }
+}
+
+/// Places tried along a joint without screws, to see if the drill fits somewhere.
+const SAMPLES: usize = 5;
+
 fn whole(joint: &Joint) -> Rect {
     Rect {
         min: joint.min,
@@ -302,6 +381,14 @@ fn screwable(joint: &Joint, solved: &Solved) -> Vec<PartId> {
 fn best(a: Access, b: Access) -> Access {
     match (a, b) {
         (Access::Free, _) | (_, Access::Free) => Access::Free,
+        (Access::Cramped(p, x), Access::Cramped(q, y)) => {
+            if x >= y {
+                Access::Cramped(p, x)
+            } else {
+                Access::Cramped(q, y)
+            }
+        }
+        (Access::Cramped(p, x), _) | (_, Access::Cramped(p, x)) => Access::Cramped(p, x),
         (Access::Tight(x), Access::Tight(y)) => Access::Tight(x.max(y)),
         (Access::Tight(x), _) | (_, Access::Tight(x)) => Access::Tight(x),
         (blocked, _) => blocked,
@@ -314,16 +401,59 @@ fn worst(a: Access, b: Access) -> Access {
         (Access::Blocked(p), _) | (_, Access::Blocked(p)) => Access::Blocked(p),
         (Access::Tight(x), Access::Tight(y)) => Access::Tight(x.min(y)),
         (Access::Tight(x), _) | (_, Access::Tight(x)) => Access::Tight(x),
+        (Access::Cramped(p, x), Access::Cramped(q, y)) => {
+            if x <= y {
+                Access::Cramped(p, x)
+            } else {
+                Access::Cramped(q, y)
+            }
+        }
+        (Access::Cramped(p, x), _) | (_, Access::Cramped(p, x)) => Access::Cramped(p, x),
         _ => Access::Free,
     }
 }
 
 /// Access of a joint that has no screws yet: the best way in.
 pub fn joint_access(doc: &Document, solved: &Solved, joint: &Joint) -> Option<Access> {
-    let drill = doc.settings.drill_length;
+    let settings = &doc.settings;
+    let size = joint.size();
+    let long = if size[0] >= size[1] { 0 } else { 1 };
     screwable(joint, solved)
         .into_iter()
-        .map(|through| access(doc, solved, joint, through, whole(joint), drill))
+        .map(|through| {
+            let way_in = access(
+                doc,
+                solved,
+                joint,
+                through,
+                whole(joint),
+                settings.drill_length,
+            );
+            if way_in != Access::Free {
+                return way_in;
+            }
+            // Free to get in: is there a place along the joint where the drill fits?
+            (0..SAMPLES)
+                .map(|n| {
+                    let mut at = [
+                        (joint.min[0] + joint.max[0]) / 2.0,
+                        (joint.min[1] + joint.max[1]) / 2.0,
+                    ];
+                    at[long] = joint.min[long] + size[long] * (n as f64 + 0.5) / SAMPLES as f64;
+                    beside(
+                        doc,
+                        solved,
+                        joint,
+                        through,
+                        at,
+                        settings.drill_length,
+                        settings.drill_width,
+                    )
+                    .map_or(Access::Free, |(part, room)| Access::Cramped(part, room))
+                })
+                .reduce(best)
+                .unwrap_or(Access::Free)
+        })
         .reduce(best)
 }
 
@@ -369,7 +499,6 @@ pub fn check_fastening(doc: &Document, solved: &Solved) -> Vec<Issue> {
         }
     }
 
-    let drill = doc.settings.drill_length;
     for (n, joint) in joints.iter().enumerate() {
         let (a, b) = (joint.a, joint.b);
         if screwable(joint, solved).is_empty() {
@@ -400,13 +529,20 @@ pub fn check_fastening(doc: &Document, solved: &Solved) -> Vec<Issue> {
                             (p.pos[j] + half).min(joint.max[1]),
                         ],
                     };
-                    Some(access(doc, solved, joint, through, region, drill))
+                    let at = [p.pos[i], p.pos[j]];
+                    Some(screw_access(doc, solved, joint, through, region, at))
                 })
                 .reduce(worst)
         };
         match reach {
             Some(Access::Blocked(blocker)) => out.push(Issue::Blocked { a, b, blocker }),
             Some(Access::Tight(room)) => out.push(Issue::Tight { a, b, room }),
+            Some(Access::Cramped(blocker, room)) => out.push(Issue::Cramped {
+                a,
+                b,
+                blocker,
+                room,
+            }),
             _ => {}
         }
     }
@@ -557,6 +693,96 @@ mod tests {
         let issues = check_fastening(&doc, &s);
         assert!(!issues.iter().any(|i| matches!(i, Issue::Blocked { .. })));
         assert!(!issues.iter().any(|i| matches!(i, Issue::Tight { .. })));
+    }
+
+    fn cramped(issues: &[Issue]) -> Vec<(PartId, PartId, PartId, f64)> {
+        issues
+            .iter()
+            .filter_map(|i| match i {
+                Issue::Cramped {
+                    a,
+                    b,
+                    blocker,
+                    room,
+                } => Some((*a, *b, *blocker, *room)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_shelf_just_beside_leaves_no_room_for_the_drill_body() {
+        let (mut doc, f) = framed();
+        screw_frame(&mut doc, &f, 2);
+        let c = cell(&doc, 400.0, 300.0);
+        let division = divide(&mut doc, &c, 0, &cota(373.0), "division");
+        let c = cell(&doc, 200.0, 300.0);
+        let left_shelf = divide(&mut doc, &c, 1, &cota(250.0), "left shelf");
+        let c = cell(&doc, 600.0, 300.0);
+        let right_shelf = divide(&mut doc, &c, 1, &cota(250.0), "right shelf");
+        add_screws(&mut doc, f.bottom, division, 2);
+        add_screws(&mut doc, f.top, division, 2);
+        add_screws(&mut doc, f.left, left_shelf, 2);
+        add_screws(&mut doc, f.right, right_shelf, 2);
+        // The right shelf 30 higher: 12 between the two, 21 from the middle of one to
+        // the other. The way through the division is open, but the drill does not fit.
+        let s0 = solve(&doc);
+        crate::edit::translate(&mut doc, &s0, right_shelf, 1, 30.0, None, true);
+        let s = solve(&doc);
+        let issues = check_fastening(&doc, &s);
+        assert!(!issues.iter().any(|i| matches!(i, Issue::Blocked { .. })));
+        assert_eq!(
+            cramped(&issues),
+            vec![
+                (left_shelf, division, right_shelf, 21.0),
+                (division, right_shelf, left_shelf, 21.0)
+            ]
+        );
+
+        // The same with the screws in place.
+        add_screws(&mut doc, division, left_shelf, 2);
+        add_screws(&mut doc, division, right_shelf, 2);
+        let issues = check_fastening(&doc, &s);
+        assert_eq!(
+            cramped(&issues),
+            vec![
+                (left_shelf, division, right_shelf, 21.0),
+                (division, right_shelf, left_shelf, 21.0)
+            ]
+        );
+        let warning = issues
+            .iter()
+            .find(|i| matches!(i, Issue::Cramped { .. }))
+            .unwrap();
+        assert!(!warning.is_error());
+        assert_eq!(warning.parts(), vec![left_shelf, division, right_shelf]);
+
+        // A slim drill, or none to speak of, fits.
+        doc.settings.drill_width = 40.0;
+        assert!(cramped(&check_fastening(&doc, &s)).is_empty());
+        doc.settings.drill_width = 0.0;
+        assert!(cramped(&check_fastening(&doc, &s)).is_empty());
+    }
+
+    #[test]
+    fn a_board_along_the_drill_cramps_it() {
+        let (mut doc, f) = framed();
+        screw_frame(&mut doc, &f, 2);
+        let c = cell(&doc, 400.0, 300.0);
+        let division = divide(&mut doc, &c, 0, &cota(373.0), "division");
+        // A shelf close under the top, screwed through the division: the top runs along
+        // where the drill would be.
+        let c = cell(&doc, 200.0, 300.0);
+        let shelf = divide(&mut doc, &c, 1, &cota(530.0), "shelf");
+        add_screws(&mut doc, division, shelf, 2);
+        let s = solve(&doc);
+        let middle = (s.get(shelf).unwrap().min[1] + s.get(shelf).unwrap().max[1]) / 2.0;
+        let room = s.get(f.top).unwrap().min[1] - middle;
+        assert!(room > 0.0 && room < 30.0, "{room}");
+        assert_eq!(
+            cramped(&check_fastening(&doc, &s)),
+            vec![(shelf, division, f.top, room)]
+        );
     }
 
     #[test]

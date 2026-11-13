@@ -6,8 +6,9 @@
 //! Actions (separated by `;`): `stage:<materials|front|design|screws|cutlist>`,
 //! `tool:<select|dividev|divideh|board|stick|screw>`, `move:x:y`, `click:x:y`,
 //! `drag:x1:y1:x2:y2`, `type:text`, `key:<enter|escape|delete>`, `view:yaw:pitch`,
-//! `depth:<mm>`, `autoscrews`, `analyze`, `shape` (free form of the selection), `lang:<es|en>`,
-//! `dark`, `light`, `save:path`, `wait:frames`, `shot:path.ppm` and `quit`. Positions are in points
+//! `depth:<mm>`, `autoscrews`, `analyze`, `screws:<on|off>` (shown in the 3D design), `shape`
+//! (free form of the selection), `lang:<es|en>`, `dark`, `light`, `save:path`, `wait:frames`,
+//! `shot:path.ppm` and `quit`. Positions are in points
 //! from the top-left corner of the window.
 
 use std::collections::VecDeque;
@@ -203,6 +204,7 @@ impl App {
                 self.session.edit(|d| *d = doc);
             }
             "analyze" => self.analysis_on = true,
+            "screws" => self.prefs.show_screws = arg != "off",
             "save" => {
                 self.session.path = Some(PathBuf::from(args.join(":")));
                 self.save(false);

@@ -185,6 +185,13 @@ impl App {
             self.session
                 .edit_grouped("drill", |d| d.settings.drill_length = drill);
         }
+        ui.label(theme::soft(t().drill_width))
+            .on_hover_text(t().drill_width_help);
+        let mut width = self.doc().settings.drill_width;
+        if super::mm_field(ui, &mut width, 300.0).changed() {
+            self.session
+                .edit_grouped("drill_width", |d| d.settings.drill_width = width);
+        }
         ui.separator();
         ui.label(fill(t().screw_total, &[&self.doc().screws.len()]));
     }

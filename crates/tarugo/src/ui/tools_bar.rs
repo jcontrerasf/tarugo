@@ -50,5 +50,12 @@ impl App {
                 self.camera.perspective = !perspective;
             }
         }
+        if self.stage == Stage::Design {
+            let shown = self.prefs.show_screws;
+            if theme::toggle(ui, shown, icons::SCREW, t().show_screws).clicked() {
+                self.prefs.show_screws = !shown;
+                self.session.selected_screw = None;
+            }
+        }
     }
 }
