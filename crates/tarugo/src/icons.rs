@@ -25,6 +25,8 @@ pub const THEME_SYSTEM: &str = "\u{E18C}"; // circle-half
 pub const OK: &str = "\u{E182}"; // check
 pub const CANCEL: &str = "\u{E4F6}"; // x
 pub const ADD: &str = "\u{E3D4}"; // plus
+pub const LOCK: &str = "\u{E2FA}"; // lock
+pub const LOCK_OPEN: &str = "\u{E306}"; // lock-open
 
 // Stages.
 pub const MATERIALS: &str = "\u{E466}"; // stack

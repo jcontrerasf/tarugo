@@ -103,7 +103,12 @@ impl App {
         if self.stage != Stage::Design || self.tool != Tool::Select {
             return Vec::new();
         }
-        let Some(b) = self.session.selected.and_then(|id| self.scene.get(id)) else {
+        let Some(b) = self
+            .session
+            .selected
+            .filter(|id| !self.is_locked(*id))
+            .and_then(|id| self.scene.get(id))
+        else {
             return Vec::new();
         };
         (0..3)
@@ -233,7 +238,9 @@ impl App {
                     self.session.select(Some(h.part));
                     self.highlight.clear();
                     let doc = self.doc();
-                    let axes: Vec<usize> = if front {
+                    let axes: Vec<usize> = if self.is_locked(h.part) {
+                        Vec::new()
+                    } else if front {
                         // On the front sketch boards only slide across their thickness.
                         (0..2)
                             .filter(|&a| doc.part(h.part).is_some_and(|p| p.axes[a].is_thick()))
@@ -244,6 +251,8 @@ impl App {
                     let normal = if front { 2 } else { h.axis };
                     if !axes.is_empty() {
                         kind = Some((h.part, DragKind::Move { normal, axes }, h.point));
+                    } else if self.is_locked(h.part) {
+                        self.warn_locked(h.part);
                     }
                 }
             }

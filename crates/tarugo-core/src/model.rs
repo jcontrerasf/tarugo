@@ -186,6 +186,10 @@ pub struct Part {
     /// Free-form outline (corners, notches, slots, holes); the cut list ignores it.
     #[serde(default)]
     pub shape: Option<Shape>,
+    /// Kept as it is: the interface does not move, edit or delete it. It still follows
+    /// the parts and parameters it refers to.
+    #[serde(default)]
+    pub locked: bool,
 }
 
 impl Part {
@@ -345,6 +349,7 @@ impl Document {
             material,
             axes,
             swap_section: false,
+            locked: false,
             shape: None,
         });
         id

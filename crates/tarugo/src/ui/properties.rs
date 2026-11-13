@@ -3,7 +3,8 @@
 use eframe::egui::{self, RichText, Ui};
 use tarugo_core::edit::{self, Slot};
 use tarugo_core::expr::format_number;
-use tarugo_core::model::{AXIS_NAMES, End, Extent, FaceRef, PartId, Side};
+use tarugo_core::model::{AXIS_NAMES, Dim, End, Extent, FaceRef, Part, PartId, Side};
+use tarugo_core::solve::Solved;
 
 use crate::app::App;
 use crate::i18n::{fill, t};
@@ -37,6 +38,11 @@ impl App {
         let Some(part) = self.doc().part(id).cloned() else {
             return;
         };
+        // A locked part shows its properties without letting them change.
+        ui.add_enabled_ui(!part.locked, |ui| self.part_properties(ui, id, &part));
+    }
+
+    fn part_properties(&mut self, ui: &mut Ui, id: PartId, part: &Part) {
         let p = pal();
         egui::Grid::new("part_basics")
             .num_columns(2)
@@ -114,6 +120,9 @@ impl App {
                                     edit::set_length(d, &solved, id, axis, length)
                                 });
                             }
+                            if let Some(formula) = span_formula(lo, hi) {
+                                ui.label(theme::soft(format!("= {formula}")));
+                            }
                         });
                     }
                 }
@@ -166,6 +175,7 @@ impl App {
                         self.session
                             .edit(|d| edit::set_end(d, id, axis, slot, End::Abs { value: dim }));
                     }
+                    formula_value(ui, value, &solved);
                 }
                 End::Ref { face, offset } => {
                     let mut side = face.side;
@@ -214,6 +224,7 @@ impl App {
                         self.session
                             .edit(|d| edit::set_end(d, id, axis, slot, new_end));
                     }
+                    formula_value(ui, offset, &solved);
                     self.detach_button(ui, id, axis, slot, end);
                 }
                 End::Between {
@@ -242,6 +253,7 @@ impl App {
                         self.session
                             .edit(|d| edit::set_end(d, id, axis, slot, new_end));
                     }
+                    formula_value(ui, offset, &solved);
                     self.detach_button(ui, id, axis, slot, end);
                 }
             }
@@ -256,5 +268,56 @@ impl App {
             self.session
                 .edit(|d| edit::set_end(d, id, axis, slot, End::abs(value)));
         }
+    }
+}
+
+/// Beside a dimension written as a formula, what it comes to.
+fn formula_value(ui: &mut Ui, dim: &Dim, solved: &Solved) {
+    if dim.is_formula()
+        && let Ok(v) = solved.eval(dim)
+    {
+        ui.label(theme::soft(format!("= {}", format_number(v))));
+    }
+}
+
+/// Where the length of a span comes from, when its ends are written with formulas: `D`,
+/// `H - 100`, `W/2 - (W/4)`.
+fn span_formula(lo: &End, hi: &End) -> Option<String> {
+    let (End::Abs { value: lo }, End::Abs { value: hi }) = (lo, hi) else {
+        return None;
+    };
+    if !lo.is_formula() && !hi.is_formula() {
+        return None;
+    }
+    let (from, to) = (lo.0.trim(), hi.0.trim());
+    Some(if from.parse::<f64>() == Ok(0.0) {
+        to.to_string()
+    } else if lo.is_formula() {
+        format!("{to} - ({from})")
+    } else {
+        format!("{to} - {from}")
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn span_formula_names_where_the_length_comes_from() {
+        let abs = |text: &str| End::Abs {
+            value: Dim(text.to_string()),
+        };
+        assert_eq!(span_formula(&abs("0"), &abs("D")), Some("D".to_string()));
+        assert_eq!(
+            span_formula(&abs("100"), &abs("H/2")),
+            Some("H/2 - 100".to_string())
+        );
+        assert_eq!(
+            span_formula(&abs("W/4"), &abs("W")),
+            Some("W - (W/4)".to_string())
+        );
+        assert_eq!(span_formula(&abs("0"), &abs("400")), None);
+        assert_eq!(span_formula(&End::at(1, Side::Max), &abs("D")), None);
     }
 }

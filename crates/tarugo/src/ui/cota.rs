@@ -150,6 +150,8 @@ impl App {
         let Some(b) = solved.get(part.id) else {
             return out;
         };
+        // The dimensions of a locked part are shown, not edited.
+        let editable = !part.locked;
         let center = b.center();
         let axes = if front { 0..2 } else { 0..3 };
         for axis in axes {
@@ -180,7 +182,7 @@ impl App {
                             on_axis(own, 0.5),
                             (own - from).abs(),
                         );
-                        view.target = Some(CotaTarget::Anchor {
+                        view.target = editable.then_some(CotaTarget::Anchor {
                             part: part.id,
                             axis,
                         });
@@ -231,7 +233,7 @@ impl App {
                         on_axis(b.max[axis], 0.5),
                         length,
                     );
-                    view.target = Some(CotaTarget::Length {
+                    view.target = editable.then_some(CotaTarget::Length {
                         part: part.id,
                         axis,
                     });

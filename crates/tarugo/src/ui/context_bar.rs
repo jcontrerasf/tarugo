@@ -42,6 +42,7 @@ impl App {
         };
         ui.label(theme::strong(self.part_label(id)));
         ui.separator();
+        let locked = self.is_locked(id);
         if self.stage == Stage::Design {
             ui.menu_button(
                 format!("{} {}", icons::DUPLICATE, t().duplicate_beside),
@@ -62,7 +63,10 @@ impl App {
                 },
             );
             if ui
-                .button(format!("{} {}", icons::SHAPE, t().free_form))
+                .add_enabled(
+                    !locked,
+                    egui::Button::new(format!("{} {}", icons::SHAPE, t().free_form)),
+                )
                 .on_hover_text(t().free_form_help)
                 .clicked()
             {
@@ -70,7 +74,10 @@ impl App {
             }
         }
         if ui
-            .button(format!("{} {}", icons::DELETE, t().delete))
+            .add_enabled(
+                !locked,
+                egui::Button::new(format!("{} {}", icons::DELETE, t().delete)),
+            )
             .on_hover_text("Supr / Del")
             .clicked()
         {

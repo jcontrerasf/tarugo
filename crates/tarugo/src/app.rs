@@ -377,12 +377,27 @@ impl App {
         self.session.redo();
     }
 
+    /// Is the part locked against moving and editing?
+    pub fn is_locked(&self, id: PartId) -> bool {
+        self.doc().part(id).is_some_and(|p| p.locked)
+    }
+
+    /// Says why a locked part did not change.
+    pub fn warn_locked(&mut self, id: PartId) {
+        let name = self.part_label(id);
+        self.info(fill(t().part_locked, &[&name]));
+    }
+
     pub fn delete_selection(&mut self) {
         self.cancel_gesture();
         if let Some(id) = self.session.selected_screw {
             self.session.edit(|d| d.screws.retain(|s| s.id != id));
             self.session.selected_screw = None;
         } else if let Some(id) = self.session.selected {
+            if self.is_locked(id) {
+                self.warn_locked(id);
+                return;
+            }
             let solved = self.scene.solved.clone();
             self.session.edit(|d| edit::remove_part(d, &solved, id));
             self.session.selected = None;

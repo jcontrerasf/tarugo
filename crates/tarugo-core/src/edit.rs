@@ -308,6 +308,7 @@ pub fn duplicate_beside(
     let b = solved.get(id)?;
     let size = b.size()[axis];
     let mut copy = doc.part(id)?.clone();
+    copy.locked = false;
     let (touching, sign) = if before {
         (Side::Min, -1.0)
     } else {

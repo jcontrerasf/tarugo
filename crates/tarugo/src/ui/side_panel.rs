@@ -35,6 +35,7 @@ impl App {
     fn parts_list(&mut self, ui: &mut Ui) {
         let p = pal();
         let mut select = None;
+        let mut lock = None;
         let doc = self.doc();
         if doc.parts.is_empty() {
             ui.label(theme::soft(t().no_parts));
@@ -42,6 +43,14 @@ impl App {
         for part in &doc.parts {
             let selected = self.session.selected == Some(part.id);
             ui.horizontal(|ui| {
+                let (ico, help) = if part.locked {
+                    (icons::LOCK, t().unlock_part)
+                } else {
+                    (icons::LOCK_OPEN, t().lock_part)
+                };
+                if theme::mini(ui, part.locked, ico, help).clicked() {
+                    lock = Some((part.id, !part.locked));
+                }
                 let color = doc.material(part.material).map_or([128; 3], |m| m.color);
                 let (rect, _) =
                     ui.allocate_exact_size(egui::vec2(10.0, 10.0), egui::Sense::hover());
@@ -71,6 +80,17 @@ impl App {
         if let Some(id) = select {
             self.session.select(Some(id));
             self.highlight.clear();
+        }
+        if let Some((id, locked)) = lock {
+            self.cancel_gesture();
+            if locked && self.shape_editor == Some(id) {
+                self.shape_editor = None;
+            }
+            self.session.edit(|d| {
+                if let Some(p) = d.part_mut(id) {
+                    p.locked = locked;
+                }
+            });
         }
     }
 

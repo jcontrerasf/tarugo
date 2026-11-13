@@ -215,6 +215,9 @@ texts! {
     parts: "Piezas", "Parts";
     parameters: "Parámetros", "Parameters";
     warnings: "Advertencias", "Warnings";
+    lock_part: "Bloquear: no se puede mover ni editar", "Lock: it cannot be moved or edited";
+    unlock_part: "Desbloquear", "Unlock";
+    part_locked: "{} está bloqueada", "{} is locked";
     no_parts: "Sin piezas", "No parts";
     add_parameter: "Parámetro", "Parameter";
     parameters_help: "Un parámetro se puede usar en cualquier medida: W/2, (H - 2*t)/3…",
