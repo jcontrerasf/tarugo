@@ -31,6 +31,7 @@ pub enum ShapeTool {
     Select,
     Rect,
     Circle,
+    Arc,
     Slot,
     Polygon,
     Notch,
@@ -44,6 +45,7 @@ impl ShapeTool {
             ShapeTool::Select => t().hint_shape_select,
             ShapeTool::Rect => t().hint_shape_rect,
             ShapeTool::Circle => t().hint_shape_circle,
+            ShapeTool::Arc => t().hint_shape_arc,
             ShapeTool::Slot => t().hint_shape_slot,
             ShapeTool::Polygon => t().hint_shape_polygon,
             ShapeTool::Notch => t().hint_shape_notch,
@@ -68,6 +70,18 @@ enum Target {
     Corner(usize),
     Feature(usize),
     Guide(usize),
+    /// The label with the length of a side of the selected polygon: feature, side.
+    EdgeLength(usize, usize),
+}
+
+/// The length of a side being typed over its label.
+struct LengthEdit {
+    feature: usize,
+    edge: usize,
+    text: String,
+    pos: Pos2,
+    /// Just opened: it takes the focus.
+    fresh: bool,
 }
 
 enum Grab {
@@ -105,6 +119,11 @@ pub struct ShapeEdit {
     drawing: Vec<Point>,
     /// Lines the gesture snapped to in this frame: axis and value.
     guides: Vec<(usize, f64)>,
+    /// Where the next point of the polygon would go, from the pointer.
+    aim: Option<Point>,
+    /// Length typed for the side being drawn.
+    typed: String,
+    length_edit: Option<LengthEdit>,
 }
 
 impl ShapeEdit {
@@ -120,12 +139,18 @@ impl ShapeEdit {
             drawing: Vec::new(),
             guide_axis: 0,
             guides: Vec::new(),
+            aim: None,
+            typed: String::new(),
+            length_edit: None,
         }
     }
 
     pub fn set_tool(&mut self, tool: ShapeTool) {
         self.tool = tool;
         self.drawing.clear();
+        self.typed.clear();
+        self.aim = None;
+        self.length_edit = None;
     }
 
     pub fn selected_feature(&self) -> Option<usize> {
@@ -133,6 +158,26 @@ impl ShapeEdit {
             Some(Pick::Feature(f) | Pick::Vertex(f, _)) => Some(f),
             _ => None,
         }
+    }
+
+    /// Where the next point goes with the length that was typed: that far from the last
+    /// point, towards where the pointer aims.
+    fn typed_point(&self) -> Option<Point> {
+        let length: f64 = self.typed.parse().ok().filter(|l| *l > 0.0)?;
+        let (last, aim) = (*self.drawing.last()?, self.aim?);
+        let d = [aim[0] - last[0], aim[1] - last[1]];
+        let len = d[0].hypot(d[1]);
+        (len > 1e-6).then(|| [last[0] + d[0] / len * length, last[1] + d[1] / len * length])
+    }
+
+    /// Lines for the next point of the polygon being drawn: also those of its points.
+    fn drawing_targets(&self, face: &Face) -> [Vec<f64>; 2] {
+        let mut targets = face.targets(None, None);
+        for p in &self.drawing {
+            targets[0].push(p[0]);
+            targets[1].push(p[1]);
+        }
+        targets
     }
 
     /// Drops a selection that no longer exists (after an undo, a delete).
@@ -148,6 +193,11 @@ impl ShapeEdit {
         };
         if !ok {
             self.selected = None;
+        }
+        if let Some(edit) = &self.length_edit
+            && self.selected_feature() != Some(edit.feature)
+        {
+            self.length_edit = None;
         }
     }
 }
@@ -251,6 +301,14 @@ fn drawn(tool: ShapeTool, a: Point, b: Point) -> Option<Feature> {
             y: Dim::num(a[1]),
             diameter: Dim::num((2.0 * dx.hypot(dy)).round()),
         }),
+        // A half circle that bulges the way it is dragged.
+        ShapeTool::Arc if dx.hypot(dy) >= 1.0 => Some(Feature::Arc {
+            x: Dim::num(a[0]),
+            y: Dim::num(a[1]),
+            radius: Dim::num(dx.hypot(dy).round()),
+            angle: Dim::num(dy.atan2(dx).to_degrees().round()),
+            sweep: Dim::num(180.0),
+        }),
         ShapeTool::Slot if dx.abs().max(dy.abs()) > SLOT_WIDTH => {
             let vertical = dy.abs() > dx.abs();
             let (x, y) = if vertical {
@@ -288,6 +346,13 @@ fn stamped(tool: ShapeTool, at: Point, su: f64, sv: f64) -> Option<Feature> {
             x: Dim::num(at[0]),
             y: Dim::num(at[1]),
             diameter: Dim::num((small / 2.0).min(35.0).round()),
+        }),
+        ShapeTool::Arc => Some(Feature::Arc {
+            x: Dim::num(at[0]),
+            y: Dim::num(at[1]),
+            radius: Dim::num((small / 4.0).min(30.0).round()),
+            angle: Dim::num(90.0),
+            sweep: Dim::num(180.0),
         }),
         ShapeTool::Slot => Some(Feature::Slot {
             x: Dim::num(at[0]),
@@ -406,6 +471,8 @@ impl App {
         };
         if ed.gesture.take().is_some() {
             self.session.cancel_group();
+        } else if !ed.typed.is_empty() {
+            ed.typed.clear();
         } else if !ed.drawing.is_empty() {
             ed.drawing.clear();
         } else if ed.tool != ShapeTool::Select {
@@ -450,18 +517,36 @@ impl App {
         self.set_shape(face.id, shape, None);
     }
 
-    /// Enter: closes the polygon being drawn.
-    pub(crate) fn shape_close_polygon(&mut self) {
+    /// Enter: places the next point at the length that was typed, or closes the polygon
+    /// being drawn.
+    pub(crate) fn shape_enter(&mut self) {
         let Some(face) = self.shape_face() else {
             return;
         };
-        if let Some(mut ed) = self.shape_editor.take() {
-            self.close_polygon(&mut ed, &face);
-            self.shape_editor = Some(ed);
+        let Some(mut ed) = self.shape_editor.take() else {
+            return;
+        };
+        match ed.typed_point() {
+            Some(p) => {
+                ed.drawing.push(p);
+                ed.typed.clear();
+            }
+            None if ed.typed.is_empty() => self.close_polygon(&mut ed, &face),
+            None => ed.typed.clear(),
         }
+        self.shape_editor = Some(ed);
+    }
+
+    /// Backspace: takes back the last digit typed. False if there was none.
+    pub(crate) fn shape_backspace(&mut self) -> bool {
+        self.shape_editor
+            .as_mut()
+            .is_some_and(|ed| ed.typed.pop().is_some())
     }
 
     fn close_polygon(&mut self, ed: &mut ShapeEdit, face: &Face) {
+        ed.typed.clear();
+        ed.aim = None;
         let points = std::mem::take(&mut ed.drawing);
         if points.len() < 3 {
             return;
@@ -531,6 +616,25 @@ impl App {
             center: ed.center,
             scale: ed.scale,
         };
+        // Digits typed while a polygon is drawn are the length of its next side.
+        if ed.tool == ShapeTool::Polygon
+            && !ed.drawing.is_empty()
+            && ui.memory(|m| m.focused().is_none())
+        {
+            ui.input(|i| {
+                for event in &i.events {
+                    if let egui::Event::Text(text) = event {
+                        for c in text.chars() {
+                            match c {
+                                '0'..='9' => ed.typed.push(c),
+                                '.' | ',' if !ed.typed.contains('.') => ed.typed.push('.'),
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            });
+        }
         let hover = self.shape_input(ui, &response, &mut ed, &face, &view, &mut pan);
         if pan {
             let d = response.drag_delta() / ed.scale;
@@ -545,10 +649,56 @@ impl App {
                 center: ed.center,
                 scale: ed.scale,
             };
-            let lock = angle_lock(ui);
-            paint(ui, &ed, &face, &view, hover, response.hover_pos(), lock);
+            paint(ui, &ed, &face, &view, hover, response.hover_pos());
+            self.length_editor(ui, &mut ed, &face);
         }
         self.shape_editor = Some(ed);
+    }
+
+    /// The text field over the length of a side: Enter or a click elsewhere applies it,
+    /// Esc leaves the side as it was.
+    fn length_editor(&mut self, ui: &Ui, ed: &mut ShapeEdit, face: &Face) {
+        let Some(edit) = &mut ed.length_edit else {
+            return;
+        };
+        let mut done = None;
+        egui::Area::new(egui::Id::unique("shape_length_edit"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(edit.pos - Vec2::new(36.0, 14.0))
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style())
+                    .inner_margin(3)
+                    .show(ui, |ui| {
+                        let response =
+                            ui.add(egui::TextEdit::singleline(&mut edit.text).desired_width(64.0));
+                        if edit.fresh {
+                            edit.fresh = false;
+                            response.request_focus();
+                            if let Some(mut state) =
+                                egui::TextEdit::load_state(ui.ctx(), response.id)
+                            {
+                                let all = egui::text::CCursorRange::two(
+                                    egui::text::CCursor::new(0),
+                                    egui::text::CCursor::new(edit.text.chars().count()),
+                                );
+                                state.cursor.set_char_range(Some(all));
+                                state.store(ui.ctx(), response.id);
+                            }
+                        } else if response.lost_focus() {
+                            done = Some(!ui.input(|i| i.key_pressed(egui::Key::Escape)));
+                        }
+                    });
+            });
+        if let Some(commit) = done
+            && let Some(edit) = ed.length_edit.take()
+            && commit
+            && let Ok(length) = face.solved.eval(&Dim(edit.text.trim().replace(',', ".")))
+        {
+            let mut shape = face.shape.clone();
+            if shape.set_edge_length(edit.feature, edit.edge, length, &face.eval()) {
+                self.set_shape(face.id, shape, None);
+            }
+        }
     }
 
     /// Handles the primary button for the tool in use. Returns what the pointer is over.
@@ -609,13 +759,26 @@ impl App {
                             }
                             Some(Grab::Move(f))
                         }
-                        None => None,
+                        Some(Target::EdgeLength(..)) | None => None,
                     },
-                    ShapeTool::Rect | ShapeTool::Circle | ShapeTool::Slot => Some(Grab::Create),
+                    ShapeTool::Rect | ShapeTool::Circle | ShapeTool::Arc | ShapeTool::Slot => {
+                        Some(Grab::Create)
+                    }
                     ShapeTool::Polygon | ShapeTool::Notch | ShapeTool::Guide => None,
                 };
                 ed.gesture = grab.map(|grab| {
-                    let targets = face.targets(skip, skip_guide);
+                    let mut targets = face.targets(skip, skip_guide);
+                    // A vertex also lines up with the others of its polygon.
+                    if let Grab::Handle(f, Handle::Vertex(v)) = grab
+                        && let Some(points) = original.polygon_points(f, &eval)
+                    {
+                        for (n, p) in points.iter().enumerate() {
+                            if n != v {
+                                targets[0].push(p[0]);
+                                targets[1].push(p[1]);
+                            }
+                        }
+                    }
                     let start = if matches!(grab, Grab::Create) {
                         snap_point(&mut ed.guides, &targets, tolerance, at)
                     } else {
@@ -644,13 +807,18 @@ impl App {
                     Grab::Handle(f, handle) => {
                         // The rim of a hole and the width of a slot are distances.
                         let to = match handle {
-                            Handle::Radius | Handle::SlotWidth => at,
+                            Handle::Radius | Handle::SlotWidth | Handle::ArcEnd => at,
+                            // Locked: the arc bulges at a multiple of the step.
+                            Handle::ArcApex => match arc_center(&g.original, f, &eval) {
+                                Some(from) if lock => shape::snap_angle(from, at, ANGLE_STEP),
+                                _ => at,
+                            },
                             // Locked to the angle of the side that arrives at the vertex.
-                            Handle::Vertex(v) if lock => {
-                                match vertex_before(&g.original, f, v, &eval) {
-                                    Some(from) => shape::snap_angle(from, at, ANGLE_STEP),
-                                    None => at,
-                                }
+                            Handle::Vertex(v) => {
+                                let before = g.original.polygon_points(f, &eval).and_then(|p| {
+                                    p.get((v + p.len() - 1) % p.len().max(1)).copied()
+                                });
+                                next_point(&mut ed.guides, &g.targets, tolerance, before, at, lock)
                             }
                             _ => snap_point(&mut ed.guides, &g.targets, tolerance, at),
                         };
@@ -664,7 +832,11 @@ impl App {
                         }
                     }
                     Grab::Create => {
-                        let to = snap_point(&mut ed.guides, &g.targets, tolerance, at);
+                        let to = if ed.tool == ShapeTool::Arc && lock {
+                            shape::snap_angle(g.start, at, ANGLE_STEP)
+                        } else {
+                            snap_point(&mut ed.guides, &g.targets, tolerance, at)
+                        };
                         if let Some(feature) = drawn(ed.tool, g.start, to) {
                             shape.features.push(feature);
                         }
@@ -708,6 +880,24 @@ impl App {
                         Some(Target::Corner(n)) => Some(Pick::Corner(n)),
                         Some(Target::Feature(f)) => Some(Pick::Feature(f)),
                         Some(Target::Guide(n)) => Some(Pick::Guide(n)),
+                        Some(Target::EdgeLength(f, n)) => {
+                            let length = face
+                                .shape
+                                .polygon_points(f, &eval)
+                                .map(|p| {
+                                    let (a, b) = (p[n % p.len()], p[(n + 1) % p.len()]);
+                                    (b[0] - a[0]).hypot(b[1] - a[1])
+                                })
+                                .unwrap_or(0.0);
+                            ed.length_edit = Some(LengthEdit {
+                                feature: f,
+                                edge: n,
+                                text: measure(length),
+                                pos,
+                                fresh: true,
+                            });
+                            ed.selected
+                        }
                         None => None,
                     };
                 }
@@ -716,11 +906,11 @@ impl App {
                     if ed.drawing.len() >= 3 && ed.drawing.first().is_some_and(near) {
                         self.close_polygon(ed, face);
                     } else if !ed.drawing.last().is_some_and(near) {
-                        let p = match ed.drawing.last() {
-                            Some(last) if lock => shape::snap_angle(*last, at, ANGLE_STEP),
-                            _ => snap_point(&mut ed.guides, &targets, tolerance, at),
-                        };
+                        let targets = ed.drawing_targets(face);
+                        let last = ed.drawing.last().copied();
+                        let p = next_point(&mut ed.guides, &targets, tolerance, last, at, lock);
                         ed.drawing.push(p);
+                        ed.typed.clear();
                     }
                 }
                 ShapeTool::Guide => {
@@ -747,6 +937,23 @@ impl App {
         }
         if response.double_clicked_by(primary) && ed.tool == ShapeTool::Polygon {
             self.close_polygon(ed, face);
+        }
+
+        // Where the next point of the polygon would go: shown, and used by a typed length.
+        if ed.tool == ShapeTool::Polygon
+            && let Some(pos) = response.hover_pos()
+        {
+            let targets = ed.drawing_targets(face);
+            let last = ed.drawing.last().copied();
+            let at = view.to_face(pos);
+            ed.aim = Some(next_point(
+                &mut ed.guides,
+                &targets,
+                tolerance,
+                last,
+                at,
+                lock,
+            ));
         }
 
         if ed.gesture.is_some() {
@@ -779,6 +986,15 @@ fn target_at(ed: &ShapeEdit, face: &Face, view: &View, pos: Pos2) -> Option<Targ
             .min_by(|a, b| a.0.total_cmp(&b.0));
         if let Some((_, h, p)) = best {
             return Some(Target::Handle(f, h, p));
+        }
+        let label = edge_labels(face, view, f)
+            .into_iter()
+            .find(|(_, at, text)| {
+                let half = Vec2::new(text.len() as f32 * 3.5 + 5.0, 9.0);
+                Rect::from_center_size(*at, half * 2.0).contains(pos)
+            });
+        if let Some((n, ..)) = label {
+            return Some(Target::EdgeLength(f, n));
         }
     }
     let corner = (0..4)
@@ -816,18 +1032,71 @@ fn angle_lock(ui: &Ui) -> bool {
     ui.input(|i| i.modifiers.shift || i.modifiers.ctrl || i.modifiers.command)
 }
 
-/// Where the vertex before `vertex` of a polygon is.
-fn vertex_before(
+/// Where the centre of an arc is.
+fn arc_center(
     shape: &Shape,
     feature: usize,
-    vertex: usize,
     eval: &dyn Fn(&Dim) -> Result<f64, tarugo_core::expr::ExprError>,
 ) -> Option<Point> {
-    let Some(Feature::Polygon { points }) = shape.features.get(feature) else {
-        return None;
+    match shape.features.get(feature)? {
+        Feature::Arc { x, y, .. } => Some([eval(x).ok()?, eval(y).ok()?]),
+        _ => None,
+    }
+}
+
+/// Where the length of every side of a polygon is written: beside its middle, outside.
+fn edge_labels(face: &Face, view: &View, feature: usize) -> Vec<(usize, Pos2, String)> {
+    let Some(points) = face.shape.polygon_points(feature, &face.eval()) else {
+        return Vec::new();
     };
-    let before = points.get((vertex + points.len() - 1) % points.len())?;
-    Some([eval(&before.x).ok()?, eval(&before.y).ok()?])
+    let outward = if shape::ring_area(&points) >= 0.0 {
+        1.0
+    } else {
+        -1.0
+    };
+    (0..points.len())
+        .filter_map(|n| {
+            let (a, b) = (points[n], points[(n + 1) % points.len()]);
+            let d = [b[0] - a[0], b[1] - a[1]];
+            let len = d[0].hypot(d[1]);
+            (len > 1e-6).then(|| {
+                // On the screen y grows downwards.
+                let normal = Vec2::new((d[1] / len) as f32, (d[0] / len) as f32) * outward as f32;
+                let mid = view.to_screen([(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0]);
+                (n, mid + normal * 16.0, measure(len))
+            })
+        })
+        .collect()
+}
+
+/// Where a point of a polygon lands after the point `from`. With `lock` its side runs at
+/// a multiple of [`ANGLE_STEP`] and stops where it meets a line close by (so it lines up
+/// with other points); otherwise it is a point on whole millimetres or on those lines.
+fn next_point(
+    guides: &mut Vec<(usize, f64)>,
+    targets: &[Vec<f64>; 2],
+    tolerance: f64,
+    from: Option<Point>,
+    at: Point,
+    lock: bool,
+) -> Point {
+    let Some(from) = from.filter(|_| lock) else {
+        return snap_point(guides, targets, tolerance, at);
+    };
+    let p = shape::snap_angle(from, at, ANGLE_STEP);
+    let d = [p[0] - from[0], p[1] - from[1]];
+    let len = d[0].hypot(d[1]);
+    if len < 1e-6 {
+        return p;
+    }
+    let dir = [d[0] / len, d[1] / len];
+    match shape::snap_along(from, dir, len, targets, tolerance * 2.0) {
+        Some((reach, axis, line)) => {
+            guides.push((axis, line));
+            [from[0] + dir[0] * reach, from[1] + dir[1] * reach]
+        }
+        None => p,
+    }
 }
 
 /// A point on whole millimetres, or on the lines close to it.
@@ -893,7 +1162,6 @@ fn paint(
     view: &View,
     hover: Option<Target>,
     pointer: Option<Pos2>,
-    lock: bool,
 ) {
     let p = pal();
     let painter = ui.painter_at(view.rect);
@@ -1075,19 +1343,28 @@ fn paint(
                     p.cota,
                 );
             }
-            label(
-                &painter,
-                screen(&[mid[0], max[1]]) - Vec2::new(0.0, 12.0),
-                Align2::CENTER_BOTTOM,
-                format!(
-                    "{} × {}",
-                    measure(max[0] - min[0]),
-                    measure(max[1] - min[1])
-                ),
-                p.cota,
-            );
+            // A polygon shows the length of every side instead.
+            if !matches!(face.shape.features.get(f), Some(Feature::Polygon { .. })) {
+                label(
+                    &painter,
+                    screen(&[mid[0], max[1]]) - Vec2::new(0.0, 12.0),
+                    Align2::CENTER_BOTTOM,
+                    format!(
+                        "{} × {}",
+                        measure(max[0] - min[0]),
+                        measure(max[1] - min[1])
+                    ),
+                    p.cota,
+                );
+            }
         }
         if ed.tool == ShapeTool::Select {
+            // The length of every side of a polygon: a click on it types another.
+            for (n, at, text) in edge_labels(face, view, f) {
+                let hot = hover == Some(Target::EdgeLength(f, n));
+                let color = if hot { p.accent } else { p.cota };
+                label(&painter, at, Align2::CENTER_CENTER, text, color);
+            }
             let eval = face.eval();
             for (handle, at) in face.shape.handles(f, su, sv, &eval) {
                 let at = screen(&at);
@@ -1127,13 +1404,26 @@ fn paint(
     // The polygon being drawn, up to the pointer.
     if !ed.drawing.is_empty() {
         let mut line: Vec<Pos2> = ed.drawing.iter().map(screen).collect();
-        if let (Some(pos), Some(last)) = (pointer, ed.drawing.last()) {
-            // With the angle locked the next side shows where it would go.
-            line.push(if lock {
-                screen(&shape::snap_angle(*last, view.to_face(pos), ANGLE_STEP))
+        // The next side, to where the click would land or as long as what was typed.
+        let next = pointer
+            .and(ed.typed_point().or(ed.aim))
+            .zip(ed.drawing.last());
+        if let Some((to, last)) = next {
+            line.push(screen(&to));
+            let d = [to[0] - last[0], to[1] - last[1]];
+            let length = if ed.typed.is_empty() {
+                measure(d[0].hypot(d[1]))
             } else {
-                pos
-            });
+                format!("{}▏", ed.typed)
+            };
+            let angle = measure(d[1].atan2(d[0]).to_degrees().rem_euclid(360.0));
+            label(
+                &painter,
+                screen(&to) + Vec2::new(12.0, -12.0),
+                Align2::LEFT_BOTTOM,
+                format!("{length}  ·  {angle}°"),
+                p.accent,
+            );
         }
         painter.add(Paint::line(line.clone(), Stroke::new(1.5, p.accent)));
         for (n, at) in line.iter().take(ed.drawing.len()).enumerate() {

@@ -338,6 +338,11 @@ texts! {
         "No cuts. Draw one with the tools on the left.";
     rectangle: "Rectángulo", "Rectangle";
     polygon: "Polígono", "Polygon";
+    arc: "Arco / semicírculo", "Arc / half circle";
+    feature_angle: "dirección °", "direction °";
+    feature_sweep: "abarca °", "spans °";
+    hint_shape_arc: "Arrastra del centro hacia donde abomba: queda un semicírculo (Ctrl o Shift: cada 15°); el ángulo que abarca se cambia en el panel o con su punto",
+        "Drag from the centre to where it bulges: a half circle (Ctrl or Shift: every 15°); how much it spans is set in the panel or with its point";
     radius_all: "radio en todos los vértices", "radius on every vertex";
     feature_edge: "borde", "edge";
     feature_height: "alto", "height";
@@ -349,8 +354,8 @@ texts! {
         "Drag from the centre to the rim (or click for a standard one)";
     hint_shape_slot: "Arrastra de un extremo al otro (o haz clic para una estándar)",
         "Drag from one end to the other (or click for a standard one)";
-    hint_shape_polygon: "Clic en cada punto (Ctrl o Shift: ángulos de 15°); doble clic, Enter o clic en el primero para cerrar; Esc cancela",
-        "Click every point (Ctrl or Shift: 15° angles); double click, Enter or click the first one to close; Esc cancels";
+    hint_shape_polygon: "Clic en cada punto (Ctrl o Shift: ángulos de 15°, alineado con los otros puntos); teclea un largo y Enter para fijarlo; doble clic, Enter o clic en el primero cierra",
+        "Click every point (Ctrl or Shift: 15° angles, lined up with the other points); type a length and Enter to set it; double click, Enter or a click on the first one closes";
     hint_shape_notch: "Clic cerca de un borde de la pieza", "Click near an edge of the part";
     corners: "Esquinas", "Corners";
     corner_square: "Recta", "Square";

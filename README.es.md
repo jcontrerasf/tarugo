@@ -27,13 +27,15 @@ español e inglés.
    piezas y quedan unidas a ellas (mantén **Alt** para desactivarlo). Agrega tableros y palos
    haciendo clic en la cara donde se apoyan, duplica una pieza justo al lado (varios tableros
    para una cubierta) y dale **forma libre**: la vista muestra su cara en plano y dibujas
-   los cortes sobre ella — rectángulos, perforaciones, ranuras, bocados y polígonos (también
-   cóncavos, con un radio en cada vértice). Un corte dentro del tablero es un calado; si
+   los cortes sobre ella — rectángulos, perforaciones, arcos (un semicírculo o lo que
+   abarque), ranuras, bocados y polígonos (también cóncavos, con un radio en cada vértice). Un corte dentro del tablero es un calado; si
    cruza el borde, lo muerde. Arrastra un corte para moverlo y sus puntos para cambiarlo,
    redondea o achaflana las esquinas arrastrándolas, o ajusta cada medida en el panel:
    arrastra el valor hacia los lados o haz clic para escribirlo (admite fórmulas). Mantén
-   **Ctrl** o **Shift** para que los lados de un polígono queden en múltiplos de 15°, y pon
-   **líneas de guía** a las que los cortes se enganchan. Las piezas que se cruzan se pintan de rojo y se listan.
+   **Ctrl** o **Shift** para que los lados de un polígono queden en múltiplos de 15° y
+   alineados con sus otros puntos; al dibujar, teclea un número y Enter para fijar el largo
+   del lado, o haz clic en el largo de un lado para cambiarlo. Pon **líneas de guía** a las
+   que los cortes se enganchan. Las piezas que se cruzan se pintan de rojo y se listan.
 5. **Tornillos** — clic en la cara por donde entra el tornillo, sobre una unión. *Atornillar
    todo* llena las uniones a las que llega un taladro. **Analizar** revisa que cada pieza
    quede sujeta con al menos dos tornillos (si no, podría rotar) y avisa dónde no se puede

@@ -48,6 +48,7 @@ pub const EQUAL: &str = "\u{E21C}"; // equals
 pub const SHAPE: &str = "\u{EC5E}"; // shapes
 pub const RECTANGLE: &str = "\u{E3F0}"; // rectangle
 pub const CIRCLE: &str = "\u{E18A}"; // circle
+pub const ARC: &str = "\u{E18C}"; // circle-half
 pub const SLOT: &str = "\u{E700}"; // pill
 pub const POLYGON: &str = "\u{E6D0}"; // polygon
 pub const NOTCH: &str = "\u{EBD4}"; // subtract-square

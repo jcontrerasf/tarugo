@@ -66,6 +66,15 @@ pub enum Feature {
     },
     /// A polygon, convex or not, with a radius at every vertex.
     Polygon { points: Vec<Vertex> },
+    /// A piece of a circle closed by its chord: centered at (x, y), it bulges towards
+    /// `angle` and spans `sweep` (both in degrees; 180 is a half circle).
+    Arc {
+        x: Dim,
+        y: Dim,
+        radius: Dim,
+        angle: Dim,
+        sweep: Dim,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -92,6 +101,10 @@ pub enum Handle {
     NotchStart,
     NotchEnd,
     NotchDepth,
+    /// Middle of an arc: its radius and where it bulges to.
+    ArcApex,
+    /// One end of an arc: how much it spans.
+    ArcEnd,
 }
 
 pub type Point = [f64; 2];
@@ -234,41 +247,92 @@ pub fn snap_angle(from: Point, to: Point, step: f64) -> Point {
     [from[0] + len * c, from[1] + len * s]
 }
 
+/// The length closest to `len` (within `tolerance`) at which the ray from `from` along
+/// the unit direction `dir` crosses one of the lines `targets` (per axis: `x = t`,
+/// `y = t`). Returns it with the line crossed: axis and value.
+pub fn snap_along(
+    from: Point,
+    dir: Point,
+    len: f64,
+    targets: &[Vec<f64>; 2],
+    tolerance: f64,
+) -> Option<(f64, usize, f64)> {
+    let mut best: Option<(f64, usize, f64)> = None;
+    for axis in 0..2 {
+        if dir[axis].abs() < 1e-6 {
+            continue;
+        }
+        for &t in &targets[axis] {
+            let at = (t - from[axis]) / dir[axis];
+            if at > EPS
+                && (at - len).abs() <= tolerance
+                && best.is_none_or(|b| (at - len).abs() < (b.0 - len).abs())
+            {
+                best = Some((at, axis, t));
+            }
+        }
+    }
+    best
+}
+
 /// The polygon through `points` with a fillet of `radii[n]` at vertex `n`, convex or not.
-/// A fillet takes at most half of each side it touches.
+/// Two fillets that do not fit on the side they share shrink in proportion; one alone may
+/// take the whole side.
 pub fn rounded_ring(points: &[Point], radii: &[f64]) -> Vec<Point> {
     let n = points.len();
+    // Per vertex: directions to its neighbours, the angle between them and how much of
+    // each side its fillet wants.
+    struct Fillet {
+        v1: Point,
+        v2: Point,
+        theta: f64,
+        want: f64,
+    }
+    let fillets: Vec<Option<Fillet>> = (0..n)
+        .map(|i| {
+            let c = points[i];
+            let r = radii.get(i).copied().unwrap_or(0.0);
+            let (p, q) = (points[(i + n - 1) % n], points[(i + 1) % n]);
+            let (d1, d2) = ([p[0] - c[0], p[1] - c[1]], [q[0] - c[0], q[1] - c[1]]);
+            let (l1, l2) = (d1[0].hypot(d1[1]), d2[0].hypot(d2[1]));
+            if r <= EPS || l1 <= EPS || l2 <= EPS {
+                return None;
+            }
+            let (v1, v2) = ([d1[0] / l1, d1[1] / l1], [d2[0] / l2, d2[1] / l2]);
+            let theta = (v1[0] * v2[0] + v1[1] * v2[1]).clamp(-1.0, 1.0).acos();
+            let tan_half = (theta / 2.0).tan();
+            // Straight through, or folded back on itself: nothing to round.
+            (1e-3..1e6).contains(&tan_half).then_some(Fillet {
+                v1,
+                v2,
+                theta,
+                want: r / tan_half,
+            })
+        })
+        .collect();
+    let want = |i: usize| fillets[i % n].as_ref().map_or(0.0, |f| f.want);
+    // How much of what they want the two fillets of the side after vertex `i` can have.
+    let fit = |i: usize| {
+        let (a, b) = (points[i % n], points[(i + 1) % n]);
+        let len = (b[0] - a[0]).hypot(b[1] - a[1]);
+        let sum = want(i) + want(i + 1);
+        if sum > len { len / sum } else { 1.0 }
+    };
     let mut ring = Vec::new();
     for i in 0..n {
         let c = points[i];
-        let r = radii.get(i).copied().unwrap_or(0.0);
-        let (p, q) = (points[(i + n - 1) % n], points[(i + 1) % n]);
-        let (d1, d2) = ([p[0] - c[0], p[1] - c[1]], [q[0] - c[0], q[1] - c[1]]);
-        let (l1, l2) = (d1[0].hypot(d1[1]), d2[0].hypot(d2[1]));
-        if r <= EPS || l1 <= EPS || l2 <= EPS {
+        let Some(f) = &fillets[i] else {
             ring.push(c);
             continue;
-        }
-        let (v1, v2) = ([d1[0] / l1, d1[1] / l1], [d2[0] / l2, d2[1] / l2]);
-        let cos = (v1[0] * v2[0] + v1[1] * v2[1]).clamp(-1.0, 1.0);
-        let theta = cos.acos();
-        let tan_half = (theta / 2.0).tan();
-        // Straight through, or folded back on itself: nothing to round.
-        if !(1e-3..1e6).contains(&tan_half) {
-            ring.push(c);
-            continue;
-        }
-        let reach = l1.min(l2) / 2.0;
-        let (r, t) = if r / tan_half > reach {
-            (reach * tan_half, reach)
-        } else {
-            (r, r / tan_half)
         };
+        let t = f.want * fit(i + n - 1).min(fit(i));
+        let r = t * (f.theta / 2.0).tan();
+        let (v1, v2) = (f.v1, f.v2);
         let a = [c[0] + v1[0] * t, c[1] + v1[1] * t];
         let b = [c[0] + v2[0] * t, c[1] + v2[1] * t];
         let bis = [v1[0] + v2[0], v1[1] + v2[1]];
         let bl = bis[0].hypot(bis[1]);
-        let reach = r / (theta / 2.0).sin();
+        let reach = r / (f.theta / 2.0).sin();
         let o = [c[0] + bis[0] / bl * reach, c[1] + bis[1] / bl * reach];
         let a0 = (a[1] - o[1]).atan2(a[0] - o[0]);
         let a1 = (b[1] - o[1]).atan2(b[0] - o[0]);
@@ -381,6 +445,28 @@ fn feature_ring(f: &Feature, su: f64, sv: f64, eval: Eval) -> Result<Vec<Point>,
             }
             rounded_ring(&[[x, y], [x + w, y], [x + w, y + h], [x, y + h]], &[r; 4])
         }
+        Feature::Arc {
+            x,
+            y,
+            radius,
+            angle,
+            sweep,
+        } => {
+            let (x, y, r, angle, sweep) =
+                (get(x)?, get(y)?, get(radius)?, get(angle)?, get(sweep)?);
+            if r <= EPS || sweep <= EPS || sweep > 360.0 + EPS {
+                return Err(ProblemKind::BadDimension);
+            }
+            let steps = ((sweep / 360.0 * CIRCLE_STEPS as f64).ceil() as usize).max(4);
+            let mut ring: Vec<Point> = (0..=steps)
+                .map(|k| {
+                    let a = (angle - sweep / 2.0 + sweep * k as f64 / steps as f64).to_radians();
+                    [x + r * a.cos(), y + r * a.sin()]
+                })
+                .collect();
+            dedup_ring(&mut ring);
+            ring
+        }
         Feature::Polygon { points } => {
             let mut at = Vec::with_capacity(points.len());
             let mut radii = Vec::with_capacity(points.len());
@@ -450,6 +536,13 @@ impl Shape {
                     ..
                 } => out.extend([x, y, length, width]),
                 Feature::Hole { x, y, diameter } => out.extend([x, y, diameter]),
+                Feature::Arc {
+                    x,
+                    y,
+                    radius,
+                    angle,
+                    sweep,
+                } => out.extend([x, y, radius, angle, sweep]),
                 Feature::Rect {
                     x,
                     y,
@@ -602,6 +695,7 @@ impl Shape {
             Feature::Notch { edge, pos, .. } => shift(pos, delta[*edge % 2]),
             Feature::Slot { x, y, .. }
             | Feature::Hole { x, y, .. }
+            | Feature::Arc { x, y, .. }
             | Feature::Rect { x, y, .. } => {
                 shift(x, delta[0]);
                 shift(y, delta[1]);
@@ -643,6 +737,21 @@ impl Shape {
             }
             Some(Feature::Hole { x, y, diameter }) => {
                 out.push((Handle::Radius, [get(x) + get(diameter) / 2.0, get(y)]));
+            }
+            Some(Feature::Arc {
+                x,
+                y,
+                radius,
+                angle,
+                sweep,
+            }) => {
+                let (c, r, angle, sweep) = ([get(x), get(y)], get(radius), get(angle), get(sweep));
+                let on = |deg: f64| {
+                    let a = deg.to_radians();
+                    [c[0] + r * a.cos(), c[1] + r * a.sin()]
+                };
+                out.push((Handle::ArcApex, on(angle)));
+                out.push((Handle::ArcEnd, on(angle + sweep / 2.0)));
             }
             Some(Feature::Slot {
                 x,
@@ -741,6 +850,32 @@ impl Shape {
                 *diameter = number((2.0 * r).max(1.0));
             }
             (
+                Some(Feature::Arc {
+                    x,
+                    y,
+                    radius,
+                    angle,
+                    sweep,
+                }),
+                handle,
+            ) => {
+                let d = [to[0] - get(x), to[1] - get(y)];
+                let towards = d[1].atan2(d[0]).to_degrees();
+                match handle {
+                    Handle::ArcApex if d[0].hypot(d[1]) >= 1.0 => {
+                        *radius = number(d[0].hypot(d[1]));
+                        *angle = number(towards);
+                    }
+                    Handle::ArcEnd => {
+                        // Half the span is the turn from the middle of the arc to here.
+                        let half = (towards - get(angle)).rem_euclid(360.0);
+                        let half = if half > 180.0 { 360.0 - half } else { half };
+                        *sweep = number((2.0 * half).round().clamp(1.0, 360.0));
+                    }
+                    _ => {}
+                }
+            }
+            (
                 Some(Feature::Slot {
                     x,
                     y,
@@ -818,6 +953,45 @@ impl Shape {
             }
             _ => {}
         }
+    }
+
+    /// Where the vertices of a polygon are.
+    pub fn polygon_points(&self, feature: usize, eval: Eval) -> Option<Vec<Point>> {
+        let Some(Feature::Polygon { points }) = self.features.get(feature) else {
+            return None;
+        };
+        points
+            .iter()
+            .map(|v| Some([eval(&v.x).ok()?, eval(&v.y).ok()?]))
+            .collect()
+    }
+
+    /// Makes the side of a polygon that leaves vertex `edge` measure `length`: the vertex
+    /// at its end moves along the side, nothing else does. True if it did.
+    pub fn set_edge_length(
+        &mut self,
+        feature: usize,
+        edge: usize,
+        length: f64,
+        eval: Eval,
+    ) -> bool {
+        let Some(at) = self.polygon_points(feature, eval) else {
+            return false;
+        };
+        if edge >= at.len() || length <= EPS {
+            return false;
+        }
+        let end = (edge + 1) % at.len();
+        let (a, b) = (at[edge], at[end]);
+        let len = (b[0] - a[0]).hypot(b[1] - a[1]);
+        if len <= EPS {
+            return false;
+        }
+        if let Some(Feature::Polygon { points }) = self.features.get_mut(feature) {
+            points[end].x = number(a[0] + (b[0] - a[0]) / len * length);
+            points[end].y = number(a[1] + (b[1] - a[1]) / len * length);
+        }
+        true
     }
 
     /// Adds a vertex to a polygon after vertex `after`. Returns its index.
@@ -1125,6 +1299,119 @@ mod tests {
         );
         // Without radius the points come back as they are.
         assert_eq!(rounded_ring(&square, &[0.0; 4]), square.to_vec());
+    }
+
+    #[test]
+    fn a_fillet_alone_takes_the_whole_side() {
+        // 100 × 50 with radius 50 at both ends of the top side: a half circle on top.
+        let ring = rounded_ring(
+            &[[0.0, 0.0], [100.0, 0.0], [100.0, 50.0], [0.0, 50.0]],
+            &[0.0, 0.0, 50.0, 50.0],
+        );
+        assert!((ring_area(&ring) - std::f64::consts::PI * 1250.0).abs() < 40.0);
+        assert!(has(&ring, [50.0, 50.0]) && !has(&ring, [100.0, 50.0]));
+        // Two that do not fit share the side in proportion to what they want.
+        let ring = rounded_ring(
+            &[[0.0, 0.0], [90.0, 0.0], [90.0, 200.0], [0.0, 200.0]],
+            &[0.0, 0.0, 60.0, 30.0],
+        );
+        assert!(has(&ring, [30.0, 200.0]) && has(&ring, [90.0, 140.0]));
+    }
+
+    fn arc(x: f64, y: f64, radius: f64, angle: f64, sweep: f64) -> Feature {
+        Feature::Arc {
+            x: d(x),
+            y: d(y),
+            radius: d(radius),
+            angle: d(angle),
+            sweep: d(sweep),
+        }
+    }
+
+    #[test]
+    fn arcs_are_pieces_of_a_circle_closed_by_their_chord() {
+        let half = std::f64::consts::PI * 2500.0 / 2.0;
+        let mut s = Shape::default();
+        // A half circle that bulges up.
+        s.features.push(arc(200.0, 100.0, 50.0, 90.0, 180.0));
+        let o = s.outline(400.0, 300.0, &eval);
+        assert!(o.problems.is_empty());
+        assert!((120_000.0 - o.area() - half).abs() < 40.0, "{}", o.area());
+        let (min, max) = ring_bounds(&o.holes[0]);
+        assert!((min[0] - 150.0).abs() < 1e-3 && (max[0] - 250.0).abs() < 1e-3);
+        assert!((min[1] - 100.0).abs() < 1e-3 && (max[1] - 150.0).abs() < 1e-3);
+        // Towards the right, a quarter; then the whole circle.
+        s.features[0] = arc(200.0, 100.0, 50.0, 0.0, 90.0);
+        let (min, max) = ring_bounds(&s.outline(400.0, 300.0, &eval).holes[0]);
+        assert!((min[0] - 50.0 * 45f64.to_radians().cos() - 200.0).abs() < 1e-3);
+        assert!((max[0] - 250.0).abs() < 1e-3);
+        s.features[0] = arc(200.0, 100.0, 50.0, 0.0, 360.0);
+        let o = s.outline(400.0, 300.0, &eval);
+        assert!((120_000.0 - o.area() - 2.0 * half).abs() < 60.0);
+        // What makes no sense is left out.
+        s.features[0] = arc(200.0, 100.0, 50.0, 0.0, 400.0);
+        assert_eq!(s.outline(400.0, 300.0, &eval).problems.len(), 1);
+
+        // Its handles: the middle sets radius and direction, an end how much it spans.
+        s.features[0] = arc(200.0, 100.0, 50.0, 90.0, 180.0);
+        let handles = s.handles(0, 400.0, 300.0, &eval);
+        assert_eq!(handles[0].0, Handle::ArcApex);
+        assert!(has(&[handles[0].1], [200.0, 150.0]) && has(&[handles[1].1], [150.0, 100.0]));
+        s.drag_handle(0, Handle::ArcApex, [260.0, 100.0], 400.0, 300.0, &eval);
+        s.drag_handle(0, Handle::ArcEnd, [200.0, 130.0], 400.0, 300.0, &eval);
+        assert_eq!(s.features[0], arc(200.0, 100.0, 60.0, 0.0, 180.0));
+        s.drag_handle(0, Handle::ArcEnd, [230.0, 70.0], 400.0, 300.0, &eval);
+        assert_eq!(s.features[0], arc(200.0, 100.0, 60.0, 0.0, 90.0));
+        s.translate(0, [10.0, -5.0], &eval);
+        assert_eq!(s.features[0], arc(210.0, 95.0, 60.0, 0.0, 90.0));
+        let back: Shape = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert_eq!(back, s);
+    }
+
+    #[test]
+    fn a_locked_side_reaches_the_lines_of_other_points() {
+        let targets = [vec![100.0, 300.0], vec![50.0]];
+        // Straight down from (102, 200): close to y = 50.
+        let hit = snap_along([102.0, 200.0], [0.0, -1.0], 146.0, &targets, 6.0);
+        assert_eq!(hit, Some((150.0, 1, 50.0)));
+        // At 30°: where it crosses x = 300.
+        let dir = [30f64.to_radians().cos(), 0.5];
+        let (len, axis, line) = snap_along([100.0, 0.0], dir, 228.0, &targets, 6.0).unwrap();
+        assert!((len - 200.0 / dir[0]).abs() < 1e-9 && axis == 0 && line == 300.0);
+        // Nothing close, and never backwards.
+        assert_eq!(
+            snap_along([102.0, 200.0], [0.0, -1.0], 100.0, &targets, 6.0),
+            None
+        );
+        assert_eq!(
+            snap_along([102.0, 200.0], [0.0, 1.0], 3.0, &targets, 200.0),
+            None
+        );
+    }
+
+    #[test]
+    fn the_length_of_a_side_moves_only_its_end() {
+        let mut s = Shape::default();
+        s.features.push(polygon(&[
+            (0.0, 0.0, 0.0),
+            (30.0, 40.0, 5.0),
+            (100.0, 40.0, 0.0),
+            (100.0, 0.0, 0.0),
+        ]));
+        assert!(s.set_edge_length(0, 0, 100.0, &eval));
+        // The closing side: its end is the first vertex.
+        assert!(s.set_edge_length(0, 3, 80.0, &eval));
+        assert_eq!(
+            s.features[0],
+            polygon(&[
+                (20.0, 0.0, 0.0),
+                (60.0, 80.0, 5.0),
+                (100.0, 40.0, 0.0),
+                (100.0, 0.0, 0.0),
+            ])
+        );
+        assert!(!s.set_edge_length(0, 9, 80.0, &eval));
+        assert!(!s.set_edge_length(0, 0, 0.0, &eval));
     }
 
     #[test]

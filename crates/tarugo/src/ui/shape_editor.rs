@@ -37,6 +37,7 @@ fn feature_name(feature: &Feature) -> (&'static str, &'static str) {
         Feature::Notch { .. } => (icons::NOTCH, t().notch),
         Feature::Slot { .. } => (icons::SLOT, t().slot),
         Feature::Hole { .. } => (icons::CIRCLE, t().hole),
+        Feature::Arc { .. } => (icons::ARC, t().arc),
         Feature::Rect { .. } => (icons::RECTANGLE, t().rectangle),
         Feature::Polygon { .. } => (icons::POLYGON, t().polygon),
     }
@@ -107,6 +108,7 @@ impl App {
             (ShapeTool::Select, icons::SELECT, t().tool_select),
             (ShapeTool::Rect, icons::RECTANGLE, t().rectangle),
             (ShapeTool::Circle, icons::CIRCLE, t().hole),
+            (ShapeTool::Arc, icons::ARC, t().arc),
             (ShapeTool::Slot, icons::SLOT, t().slot),
             (ShapeTool::Polygon, icons::POLYGON, t().polygon),
             (ShapeTool::Notch, icons::NOTCH, t().notch),
@@ -332,7 +334,8 @@ fn corner_rows(
 fn row(ui: &mut Ui, label: &str, salt: (usize, usize), dim: &mut Dim, solved: &Solved) {
     ui.label(theme::soft(label));
     // Places may be anywhere; sizes and radii are not negative.
-    let min = if label == "x" || label == "y" || label == t().feature_pos {
+    let anywhere = ["x", "y", t().feature_pos, t().feature_angle];
+    let min = if anywhere.contains(&label) {
         f64::NEG_INFINITY
     } else {
         0.0
@@ -402,6 +405,21 @@ fn feature_fields(
                 row(ui, "x", (n, 0), x, solved);
                 row(ui, "y", (n, 1), y, solved);
                 row(ui, t().feature_diameter, (n, 2), diameter, solved);
+            });
+        }
+        Feature::Arc {
+            x,
+            y,
+            radius,
+            angle,
+            sweep,
+        } => {
+            grid.show(ui, |ui| {
+                row(ui, "x", (n, 0), x, solved);
+                row(ui, "y", (n, 1), y, solved);
+                row(ui, t().feature_radius, (n, 2), radius, solved);
+                row(ui, t().feature_angle, (n, 3), angle, solved);
+                row(ui, t().feature_sweep, (n, 4), sweep, solved);
             });
         }
         Feature::Rect {

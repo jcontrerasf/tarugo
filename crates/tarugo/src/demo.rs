@@ -7,7 +7,7 @@
 //! `tool:<select|dividev|divideh|board|stick|screw>`, `move:x:y`, `click:x:y`,
 //! `drag:x1:y1:x2:y2`, `type:text`, `key:<enter|escape|delete>`, `view:yaw:pitch`,
 //! `depth:<mm>`, `autoscrews`, `analyze`, `screws:<on|off>` (shown in the 3D design), `shape`
-//! (free-form mode on the selection), `shapetool:<select|rect|circle|slot|polygon|notch|guide>`,
+//! (free-form mode on the selection), `shapetool:<select|rect|circle|arc|slot|polygon|notch|guide>`,
 //! `shift:<on|off>` (held),
 //! `lang:<es|en>`, `dark`, `light`, `save:path`, `wait:frames`,
 //! `shot:path.ppm` and `quit`. Positions are in points
@@ -230,6 +230,7 @@ impl App {
                 let tool = match arg {
                     "rect" => ShapeTool::Rect,
                     "circle" => ShapeTool::Circle,
+                    "arc" => ShapeTool::Arc,
                     "slot" => ShapeTool::Slot,
                     "polygon" => ShapeTool::Polygon,
                     "notch" => ShapeTool::Notch,

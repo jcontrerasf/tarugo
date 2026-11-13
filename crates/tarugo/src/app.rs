@@ -506,14 +506,16 @@ impl App {
             return;
         }
         if self.shape_editor.is_some() {
-            if hit(Modifiers::NONE, Key::Delete) || hit(Modifiers::NONE, Key::Backspace) {
+            if hit(Modifiers::NONE, Key::Delete)
+                || (hit(Modifiers::NONE, Key::Backspace) && !self.shape_backspace())
+            {
                 self.shape_delete();
             }
             if hit(Modifiers::NONE, Key::Escape) {
                 self.shape_escape();
             }
             if hit(Modifiers::NONE, Key::Enter) {
-                self.shape_close_polygon();
+                self.shape_enter();
             }
             if hit(Modifiers::NONE, Key::F) {
                 self.shape_fit();
