@@ -103,10 +103,10 @@ impl App {
             let text = self.solve_error_text(e);
             ui.label(RichText::new(format!("{} {text}", icons::ERROR)).color(p.error));
         }
-        for axis in 0..3 {
+        for (axis, extent) in part.axes.iter().enumerate() {
             ui.add_space(4.0);
             ui.label(theme::strong(axis_title(axis)).size(12.5));
-            match &part.axes[axis] {
+            match extent {
                 Extent::Span { lo, hi } => {
                     self.end_row(ui, id, axis, Slot::Lo, t().end_from, lo);
                     self.end_row(ui, id, axis, Slot::Hi, t().end_to, hi);
