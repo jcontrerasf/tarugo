@@ -214,6 +214,61 @@ pub fn ring_bounds(ring: &[Point]) -> (Point, Point) {
     (min, max)
 }
 
+/// What marks a figure on the clipboard.
+const CLIP_MARK: &str = "tarugo-figure:";
+
+/// A figure as text for the clipboard.
+pub fn feature_to_text(feature: &Feature) -> String {
+    format!(
+        "{CLIP_MARK}{}",
+        serde_json::to_string(feature).unwrap_or_default()
+    )
+}
+
+/// The figure a text from the clipboard holds, if it is one.
+pub fn feature_from_text(text: &str) -> Option<Feature> {
+    serde_json::from_str(text.trim().strip_prefix(CLIP_MARK)?).ok()
+}
+
+/// The box left when a side or a corner of the box `from` is dragged to `to`. `sides`
+/// says which, per axis: -1 the low side, 0 none, 1 the high one. The opposite side stays
+/// and is never crossed. With `keep_ratio` the box keeps its proportions.
+pub fn box_drag(
+    from: (Point, Point),
+    sides: [i8; 2],
+    to: Point,
+    keep_ratio: bool,
+) -> (Point, Point) {
+    let (mut min, mut max) = from;
+    for a in 0..2 {
+        match sides[a] {
+            -1 => min[a] = to[a].min(max[a] - 1.0),
+            1 => max[a] = to[a].max(min[a] + 1.0),
+            _ => {}
+        }
+    }
+    let size = [from.1[0] - from.0[0], from.1[1] - from.0[1]];
+    if keep_ratio && size[0] > EPS && size[1] > EPS {
+        // The side that grew the most decides.
+        let factor = (0..2)
+            .filter(|a| sides[*a] != 0)
+            .map(|a| (max[a] - min[a]) / size[a])
+            .fold(0.0, f64::max);
+        if factor > 0.0 {
+            for a in 0..2 {
+                let len = size[a] * factor;
+                let mid = (from.0[a] + from.1[a]) / 2.0;
+                (min[a], max[a]) = match sides[a] {
+                    -1 => (from.1[a] - len, from.1[a]),
+                    1 => (from.0[a], from.0[a] + len),
+                    _ => (mid - len / 2.0, mid + len / 2.0),
+                };
+            }
+        }
+    }
+    (min, max)
+}
+
 pub fn point_in_ring(ring: &[Point], p: Point) -> bool {
     let mut inside = false;
     for i in 0..ring.len() {
@@ -955,6 +1010,100 @@ impl Shape {
         }
     }
 
+    /// Stretches a polygon so that the box `from` around it becomes the box `to`: its
+    /// points keep their place within the box, and the radii follow the side that changed
+    /// the least. Other figures are resized by their own handles.
+    pub fn resize(&mut self, feature: usize, from: (Point, Point), to: (Point, Point), eval: Eval) {
+        let Some(Feature::Polygon { points }) = self.features.get_mut(feature) else {
+            return;
+        };
+        let scale: [f64; 2] = std::array::from_fn(|a| {
+            let len = from.1[a] - from.0[a];
+            if len > EPS {
+                (to.1[a] - to.0[a]) / len
+            } else {
+                1.0
+            }
+        });
+        let rounding = scale[0].min(scale[1]);
+        for v in points {
+            for (a, dim) in [&mut v.x, &mut v.y].into_iter().enumerate() {
+                if let Ok(p) = eval(dim) {
+                    let q = to.0[a] + (p - from.0[a]) * scale[a];
+                    if (q - p).abs() > 1e-9 {
+                        *dim = number(q);
+                    }
+                }
+            }
+            if (rounding - 1.0).abs() > 1e-9
+                && let Ok(r) = eval(&v.radius)
+                && r > 0.0
+            {
+                v.radius = number(r * rounding);
+            }
+        }
+    }
+
+    /// Turns a figure a quarter of a turn around the middle of its box. False for what
+    /// has no other way to lie: a hole, a notch.
+    pub fn rotate_quarter(
+        &mut self,
+        feature: usize,
+        clockwise: bool,
+        su: f64,
+        sv: f64,
+        eval: Eval,
+    ) -> bool {
+        let Some(f) = self.features.get_mut(feature) else {
+            return false;
+        };
+        let Ok(ring) = feature_ring(f, su, sv, eval) else {
+            return false;
+        };
+        let (min, max) = ring_bounds(&ring);
+        let c = [(min[0] + max[0]) / 2.0, (min[1] + max[1]) / 2.0];
+        let turn = |p: Point| {
+            let d = [p[0] - c[0], p[1] - c[1]];
+            if clockwise {
+                [c[0] + d[1], c[1] - d[0]]
+            } else {
+                [c[0] - d[1], c[1] + d[0]]
+            }
+        };
+        let get = |d: &Dim| eval(d).unwrap_or(0.0);
+        match f {
+            Feature::Hole { .. } | Feature::Notch { .. } => return false,
+            Feature::Slot { vertical, .. } => *vertical = !*vertical,
+            Feature::Rect {
+                x,
+                y,
+                width,
+                height,
+                ..
+            } => {
+                let (w, h) = (get(width), get(height));
+                std::mem::swap(width, height);
+                *x = number(c[0] - h / 2.0);
+                *y = number(c[1] - w / 2.0);
+            }
+            Feature::Arc { x, y, angle, .. } => {
+                let at = turn([get(x), get(y)]);
+                let by = if clockwise { -90.0 } else { 90.0 };
+                *x = number(at[0]);
+                *y = number(at[1]);
+                *angle = number((get(angle) + by).rem_euclid(360.0));
+            }
+            Feature::Polygon { points } => {
+                for v in points {
+                    let at = turn([get(&v.x), get(&v.y)]);
+                    v.x = number(at[0]);
+                    v.y = number(at[1]);
+                }
+            }
+        }
+        true
+    }
+
     /// Where the vertices of a polygon are.
     pub fn polygon_points(&self, feature: usize, eval: Eval) -> Option<Vec<Point>> {
         let Some(Feature::Polygon { points }) = self.features.get(feature) else {
@@ -1614,6 +1763,161 @@ mod tests {
             Feature::Notch { pos, width, depth, .. }
                 if *pos == d(90.0) && *width == d(50.0) && *depth == d(50.0)
         ));
+    }
+
+    #[test]
+    fn a_polygon_is_stretched_by_its_box() {
+        // A half circle: a rectangle with its two upper corners rounded.
+        let half = polygon(&[
+            (100.0, 200.0, 50.0),
+            (200.0, 200.0, 50.0),
+            (200.0, 150.0, 0.0),
+            (100.0, 150.0, 0.0),
+        ]);
+        let from = ([100.0, 150.0], [200.0, 200.0]);
+        let mut s = Shape {
+            features: vec![half.clone()],
+            ..Shape::default()
+        };
+        // The right side out: the left one stays, the radii too.
+        let to = box_drag(from, [1, 0], [260.0, 999.0], false);
+        assert_eq!(to, ([100.0, 150.0], [260.0, 200.0]));
+        s.resize(0, from, to, &eval);
+        assert_eq!(
+            s.features[0],
+            polygon(&[
+                (100.0, 200.0, 50.0),
+                (260.0, 200.0, 50.0),
+                (260.0, 150.0, 0.0),
+                (100.0, 150.0, 0.0),
+            ])
+        );
+        // The left side in to half the width: the radii shrink with it.
+        s.features[0] = half.clone();
+        let to = box_drag(from, [-1, 0], [150.0, 0.0], false);
+        s.resize(0, from, to, &eval);
+        assert_eq!(
+            s.features[0],
+            polygon(&[
+                (150.0, 200.0, 25.0),
+                (200.0, 200.0, 25.0),
+                (200.0, 150.0, 0.0),
+                (150.0, 150.0, 0.0),
+            ])
+        );
+        // A corner keeping the proportions: twice as big from the lower-left corner.
+        s.features[0] = half;
+        let to = box_drag(from, [1, 1], [300.0, 210.0], true);
+        assert_eq!(to, ([100.0, 150.0], [300.0, 250.0]));
+        s.resize(0, from, to, &eval);
+        assert_eq!(
+            s.features[0],
+            polygon(&[
+                (100.0, 250.0, 100.0),
+                (300.0, 250.0, 100.0),
+                (300.0, 150.0, 0.0),
+                (100.0, 150.0, 0.0),
+            ])
+        );
+        // A side never crosses the opposite one; a side alone keeps the middle across.
+        assert_eq!(
+            box_drag(from, [1, 0], [0.0, 0.0], false),
+            ([100.0, 150.0], [101.0, 200.0])
+        );
+        assert_eq!(
+            box_drag(from, [1, 0], [300.0, 0.0], true),
+            ([100.0, 125.0], [300.0, 225.0])
+        );
+    }
+
+    #[test]
+    fn what_is_not_stretched_keeps_its_formula() {
+        let mut s = Shape {
+            features: vec![Feature::Polygon {
+                points: vec![
+                    Vertex {
+                        x: d(0.0),
+                        y: Dim("5*2".into()),
+                        radius: d(0.0),
+                    },
+                    Vertex {
+                        x: d(40.0),
+                        y: Dim("5*2".into()),
+                        radius: d(0.0),
+                    },
+                    Vertex {
+                        x: d(40.0),
+                        y: d(30.0),
+                        radius: d(0.0),
+                    },
+                ],
+            }],
+            ..Shape::default()
+        };
+        s.resize(
+            0,
+            ([0.0, 10.0], [40.0, 30.0]),
+            ([0.0, 10.0], [80.0, 30.0]),
+            &eval,
+        );
+        let Feature::Polygon { points } = &s.features[0] else {
+            panic!()
+        };
+        assert_eq!(points[1].x, d(80.0));
+        assert_eq!(points[1].y, Dim("5*2".into()));
+    }
+
+    #[test]
+    fn figures_travel_as_text() {
+        let f = polygon(&[(0.0, 0.0, 0.0), (40.0, 0.0, 3.0), (40.0, 20.0, 0.0)]);
+        assert_eq!(feature_from_text(&feature_to_text(&f)), Some(f));
+        assert_eq!(feature_from_text("hello"), None);
+        assert_eq!(feature_from_text("tarugo-figure:{}"), None);
+    }
+
+    #[test]
+    fn figures_turn_by_quarters() {
+        let (su, sv) = (400.0, 300.0);
+        let features = vec![
+            rect(100.0, 100.0, 80.0, 40.0, 5.0),
+            Feature::Slot {
+                x: d(250.0),
+                y: d(150.0),
+                length: d(100.0),
+                width: d(20.0),
+                vertical: false,
+            },
+            polygon(&[(0.0, 0.0, 0.0), (40.0, 0.0, 3.0), (40.0, 20.0, 0.0)]),
+            arc(200.0, 100.0, 50.0, 90.0, 180.0),
+            hole(200.0, 150.0, 40.0),
+        ];
+        let mut s = Shape {
+            features: features.clone(),
+            ..Shape::default()
+        };
+        assert!(s.rotate_quarter(0, false, su, sv, &eval));
+        assert_eq!(s.features[0], rect(120.0, 80.0, 40.0, 80.0, 5.0));
+        assert!(s.rotate_quarter(1, true, su, sv, &eval));
+        assert!(
+            matches!(&s.features[1], Feature::Slot { vertical: true, x, .. } if *x == d(250.0))
+        );
+        // Around (20, 10), counter-clockwise.
+        assert!(s.rotate_quarter(2, false, su, sv, &eval));
+        assert_eq!(
+            s.features[2],
+            polygon(&[(30.0, -10.0, 0.0), (30.0, 30.0, 3.0), (10.0, 30.0, 0.0)])
+        );
+        // The half circle over (150..250, 100..150) now bulges to the left.
+        assert!(s.rotate_quarter(3, false, su, sv, &eval));
+        assert_eq!(s.features[3], arc(225.0, 125.0, 50.0, 180.0, 180.0));
+        assert!(!s.rotate_quarter(4, false, su, sv, &eval));
+        // Three more quarters and everything is back.
+        for _ in 0..3 {
+            for f in 0..4 {
+                s.rotate_quarter(f, f == 1, su, sv, &eval);
+            }
+        }
+        assert_eq!(s.features, features);
     }
 
     #[test]

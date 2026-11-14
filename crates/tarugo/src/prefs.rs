@@ -24,6 +24,10 @@ pub struct Prefs {
     pub show_screws: bool,
     /// How the corners of the frame of a new design are made.
     pub frame_style: FrameStyle,
+    /// Free-form mode: how solid the rest of the furniture is drawn behind the part
+    /// (0 hides it) and how solid the part itself is.
+    pub shape_ghost: f32,
+    pub shape_part_opacity: f32,
 }
 
 impl Default for Prefs {
@@ -36,6 +40,8 @@ impl Default for Prefs {
             perspective: true,
             show_screws: true,
             frame_style: FrameStyle::default(),
+            shape_ghost: 0.35,
+            shape_part_opacity: 0.8,
         }
     }
 }

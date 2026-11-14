@@ -63,6 +63,8 @@ impl App {
         };
         let mut leave = false;
         let mut delete = false;
+        // Copy, paste, duplicate, turn left, turn right.
+        let mut act = [false; 5];
         ui.horizontal_wrapped(|ui| {
             if theme::primary_button(ui, icons::OK, t().done)
                 .on_hover_text(t().done_help)
@@ -84,17 +86,94 @@ impl App {
                 ui.selectable_value(&mut ed.guide_axis, 1, t().horizontal);
             }
             let selected = self.shape_editor.as_ref().and_then(|e| e.selected);
-            if selected.is_some() {
+            let figure = self
+                .shape_editor
+                .as_ref()
+                .and_then(|e| e.selected_feature())
+                .and_then(|f| face.shape.features.get(f));
+            if selected.is_some() || self.shape_clipboard.is_some() {
                 ui.separator();
-                if ui
+            }
+            let copied = self.shape_clipboard.is_some();
+            let turns =
+                figure.is_some_and(|f| !matches!(f, Feature::Hole { .. } | Feature::Notch { .. }));
+            let buttons = [
+                (icons::COPY, t().copy, "Ctrl+C", figure.is_some(), true),
+                (icons::PASTE, t().paste, "Ctrl+V", copied, true),
+                (
+                    icons::DUPLICATE,
+                    t().duplicate,
+                    "Ctrl+D",
+                    figure.is_some(),
+                    true,
+                ),
+                (
+                    icons::ROTATE_LEFT,
+                    t().rotate_left,
+                    "R",
+                    figure.is_some(),
+                    turns,
+                ),
+                (
+                    icons::ROTATE_RIGHT,
+                    t().rotate_right,
+                    "Shift+R",
+                    figure.is_some(),
+                    turns,
+                ),
+            ];
+            for (n, (ico, name, keys, shown, enabled)) in buttons.into_iter().enumerate() {
+                let help = format!("{name}  ({keys})");
+                if shown && theme::icon_button_if(ui, enabled, ico, &help).clicked() {
+                    act[n] = true;
+                }
+            }
+            if selected.is_some()
+                && ui
                     .button(format!("{} {}", icons::DELETE, t().delete))
                     .on_hover_text("Supr / Del")
                     .clicked()
-                {
-                    delete = true;
-                }
+            {
+                delete = true;
             }
+            ui.separator();
+            let percent = |ui: &mut Ui, value: &mut f32, name: &str, help: &str| {
+                ui.label(theme::soft(name)).on_hover_text(help);
+                let mut shown = (*value * 100.0).round();
+                let slider = egui::Slider::new(&mut shown, 0.0..=100.0)
+                    .suffix(" %")
+                    .fixed_decimals(0);
+                ui.spacing_mut().slider_width = 70.0;
+                if ui.add(slider).on_hover_text(help).changed() {
+                    *value = shown / 100.0;
+                }
+            };
+            let prefs = &mut self.prefs;
+            percent(
+                ui,
+                &mut prefs.shape_ghost,
+                t().shape_ghost,
+                t().shape_ghost_help,
+            );
+            percent(
+                ui,
+                &mut prefs.shape_part_opacity,
+                t().shape_opacity,
+                t().shape_opacity_help,
+            );
         });
+        if act[0] {
+            self.shape_copy(ui.ctx());
+        }
+        if act[1] {
+            self.shape_paste(None);
+        }
+        if act[2] {
+            self.shape_duplicate();
+        }
+        if act[3] || act[4] {
+            self.shape_rotate(act[4]);
+        }
         if delete {
             self.shape_delete();
         }

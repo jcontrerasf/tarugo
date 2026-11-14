@@ -93,6 +93,8 @@ pub struct App {
     pub cota_edit: Option<CotaEdit>,
     /// Free-form mode: the part whose outline is being edited in the view.
     pub shape_editor: Option<ShapeEdit>,
+    /// The figure last copied in the free-form mode.
+    pub shape_clipboard: Option<tarugo_core::shape::Feature>,
     pub dialog: Option<Dialog>,
     pub pending: Option<Pending>,
     /// Message for the status bar; true if it is an error.
@@ -140,6 +142,7 @@ impl App {
             analysis_on: false,
             cota_edit: None,
             shape_editor: None,
+            shape_clipboard: None,
             dialog: None,
             pending: None,
             message: None,
@@ -522,6 +525,35 @@ impl App {
             }
             if hit(Modifiers::NONE, Key::F) {
                 self.shape_fit();
+            }
+            if hit(ctrl, Key::D) {
+                self.shape_duplicate();
+            }
+            if hit(Modifiers::SHIFT, Key::R) {
+                self.shape_rotate(true);
+            } else if hit(Modifiers::NONE, Key::R) {
+                self.shape_rotate(false);
+            }
+            // Ctrl+C, X and V arrive as events of their own, not as keys.
+            let (mut copy, mut cut, mut paste) = (false, false, None);
+            ctx.input(|i| {
+                for event in &i.events {
+                    match event {
+                        egui::Event::Copy => copy = true,
+                        egui::Event::Cut => cut = true,
+                        egui::Event::Paste(text) => paste = Some(text.clone()),
+                        _ => {}
+                    }
+                }
+            });
+            if copy || cut {
+                self.shape_copy(ctx);
+            }
+            if cut {
+                self.shape_delete();
+            }
+            if let Some(text) = paste {
+                self.shape_paste(Some(&text));
             }
             return;
         }

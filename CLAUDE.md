@@ -61,5 +61,16 @@ Never capture with ImageMagick's `import -window`: it grabs the pointer waiting 
   split it, are reported (`Issue::Shape`). A value set with the mouse becomes a plain number;
   typed formulas stay. Guide lines live in `Shape::guides` (they cut nothing: `is_plain`
   ignores them, `is_empty` does not).
+- Free-form mode, handling figures: a selected polygon has a frame a little out of its box
+  whose handles scale it (`shape::box_drag` + `Shape::resize`): the opposite side stays, the
+  radii follow the side that changed the least, Shift/Ctrl keeps the proportions. The other
+  figures are resized by their own handles. Figures turn only by quarters
+  (`Shape::rotate_quarter`), so none changes its type. Copy and paste go through the system
+  clipboard as text (`shape::feature_to_text`), with `App::shape_clipboard` as a fallback;
+  egui delivers Ctrl+C/X/V as `Event::Copy/Cut/Paste`, not as keys.
+- Free-form mode, reference: the other parts are drawn flat behind the face (`Face::others`,
+  farthest first; their own outline if they lie the same way) and their sides are snap
+  lines. `Prefs::shape_ghost` (0 hides them and their snapping) and
+  `Prefs::shape_part_opacity` are set from the context bar.
 - A joint is screwable if one of its parts is at most `analysis::MAX_THROUGH` thick along
   the joint's axis. Edge-to-edge joints (boards side by side) are not asked for screws.

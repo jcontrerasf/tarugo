@@ -5,8 +5,10 @@
 //!
 //! Actions (separated by `;`): `stage:<materials|front|design|screws|cutlist>`,
 //! `tool:<select|dividev|divideh|board|stick|screw>`, `move:x:y`, `click:x:y`,
-//! `drag:x1:y1:x2:y2`, `type:text`, `key:<enter|escape|delete>`, `view:yaw:pitch`,
-//! `depth:<mm>`, `autoscrews`, `analyze`, `screws:<on|off>` (shown in the 3D design), `shape`
+//! `drag:x1:y1:x2:y2`, `type:text`, `key:<enter|escape|delete|copy|paste|rotate>`,
+//! `view:yaw:pitch`, `ghost:<0-100>` and `opacity:<0-100>` (free-form mode: how solid the
+//! rest of the furniture and the part are drawn),
+//! `select:<part name>`, `depth:<mm>`, `autoscrews`, `analyze`, `screws:<on|off>` (shown in the 3D design), `shape`
 //! (free-form mode on the selection), `shapetool:<select|rect|circle|arc|slot|polygon|notch|guide>`,
 //! `shift:<on|off>` (held),
 //! `lang:<es|en>`, `dark`, `light`, `save:path`, `wait:frames`,
@@ -180,14 +182,24 @@ impl App {
                 }
             }
             "type" => demo.events.push_back(vec![Event::Text(args.join(":"))]),
-            "key" => {
-                let key = match arg {
-                    "enter" => Key::Enter,
-                    "escape" => Key::Escape,
-                    _ => Key::Delete,
-                };
-                demo.key(key);
-            }
+            "key" => match arg {
+                "copy" => demo.events.push_back(vec![Event::Copy]),
+                // What a copy left here, as the system clipboard would give it back.
+                "paste" => {
+                    let text = self
+                        .shape_clipboard
+                        .as_ref()
+                        .map(tarugo_core::shape::feature_to_text)
+                        .unwrap_or_default();
+                    demo.events.push_back(vec![Event::Paste(text)]);
+                }
+                "enter" => demo.key(Key::Enter),
+                "escape" => demo.key(Key::Escape),
+                "rotate" => demo.key(Key::R),
+                _ => demo.key(Key::Delete),
+            },
+            "ghost" => self.prefs.shape_ghost = arg.parse().unwrap_or(35.0) / 100.0,
+            "opacity" => self.prefs.shape_part_opacity = arg.parse().unwrap_or(80.0) / 100.0,
             "view" => {
                 if let (Some(yaw), Some(pitch)) = (
                     args.first().and_then(|a| a.parse().ok()),
@@ -211,6 +223,15 @@ impl App {
             "save" => {
                 self.session.path = Some(PathBuf::from(args.join(":")));
                 self.save(false);
+            }
+            "select" => {
+                let name = args.join(":");
+                self.session.selected = self
+                    .doc()
+                    .parts
+                    .iter()
+                    .find(|p| p.name == name)
+                    .map(|p| p.id);
             }
             "shape" => {
                 if let Some(id) = self.session.selected {

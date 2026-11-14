@@ -353,8 +353,17 @@ texts! {
     radius_all: "radio en todos los vértices", "radius on every vertex";
     feature_edge: "borde", "edge";
     feature_height: "alto", "height";
-    hint_shape_select: "Clic para seleccionar un corte; arrástralo para moverlo o arrastra sus puntos para cambiarlo. Los círculos de las esquinas las redondean.",
-        "Click to select a cut; drag it to move it or drag its points to change it. The circles at the corners round them.";
+    hint_shape_select: "Clic para seleccionar un corte; arrástralo para moverlo, arrastra sus puntos para cambiarlo o el marco de un polígono para escalarlo (Shift: proporcional). Ctrl+C/V copia y pega, Ctrl+D duplica, R gira 90°.",
+        "Click to select a cut; drag it to move it, drag its points to change it or the frame of a polygon to scale it (Shift: keep proportions). Ctrl+C/V copy and paste, Ctrl+D duplicates, R turns 90°.";
+    paste: "Pegar", "Paste";
+    duplicate: "Duplicar", "Duplicate";
+    rotate_left: "Girar 90° a la izquierda", "Turn 90° to the left";
+    rotate_right: "Girar 90° a la derecha", "Turn 90° to the right";
+    shape_ghost: "Mueble", "Furniture";
+    shape_ghost_help: "Opacidad del resto del mueble, dibujado detrás como referencia (0 lo oculta)",
+        "Opacity of the rest of the furniture, drawn behind as a reference (0 hides it)";
+    shape_opacity: "Pieza", "Part";
+    shape_opacity_help: "Opacidad de la pieza que se edita", "Opacity of the part being edited";
     hint_shape_rect: "Arrastra de esquina a esquina (o haz clic para uno estándar)",
         "Drag from corner to corner (or click for a standard one)";
     hint_shape_circle: "Arrastra del centro al borde (o haz clic para una estándar)",

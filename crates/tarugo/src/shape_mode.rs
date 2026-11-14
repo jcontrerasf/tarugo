@@ -25,6 +25,10 @@ const SNAP: f32 = 6.0;
 const SLOT_WIDTH: f64 = 8.0;
 /// Step of the angles a polygon side locks to with Ctrl or Shift (degrees).
 const ANGLE_STEP: f64 = 15.0;
+/// How far out of a polygon (in points) the frame that scales it is drawn.
+const FRAME_GAP: f32 = 12.0;
+/// How far a copy lands from its original when there is no pointer to put it under (mm).
+const COPY_SHIFT: Point = [10.0, -10.0];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ShapeTool {
@@ -67,6 +71,8 @@ pub enum Pick {
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Target {
     Handle(usize, Handle, Point),
+    /// A side or corner of the frame around the selected polygon (see `shape::box_drag`).
+    Scale(usize, [i8; 2]),
     Corner(usize),
     Feature(usize),
     Guide(usize),
@@ -88,6 +94,7 @@ enum Grab {
     Guide(usize),
     Move(usize),
     Handle(usize, Handle),
+    Scale(usize, [i8; 2]),
     Corner(usize),
     /// A figure being drawn from where the button went down.
     Create,
@@ -124,6 +131,8 @@ pub struct ShapeEdit {
     /// Length typed for the side being drawn.
     typed: String,
     length_edit: Option<LengthEdit>,
+    /// Point of the face under the pointer.
+    pointer: Option<Point>,
 }
 
 impl ShapeEdit {
@@ -142,6 +151,7 @@ impl ShapeEdit {
             aim: None,
             typed: String::new(),
             length_edit: None,
+            pointer: None,
         }
     }
 
@@ -214,6 +224,19 @@ pub struct Face {
     pub outline: Outline,
     pub solved: Solved,
     pub color: Color32,
+    /// The rest of the furniture, seen flat behind the face: the farthest first. Empty
+    /// while it is hidden.
+    pub others: Vec<Ghost>,
+}
+
+/// Another part as it is seen from the face being edited.
+pub struct Ghost {
+    /// Its outline and its holes.
+    rings: Vec<Vec<Point>>,
+    points: Vec<Point>,
+    triangles: Vec<[usize; 3]>,
+    bounds: (Point, Point),
+    color: Color32,
 }
 
 impl Face {
@@ -258,6 +281,12 @@ impl Face {
                 out[a].extend([min[a], (min[a] + max[a]) / 2.0, max[a]]);
             }
         }
+        // The sides of the other parts, to line cuts up with shelves and divisions.
+        for ghost in &self.others {
+            for (a, lines) in out.iter_mut().enumerate() {
+                lines.extend([ghost.bounds.0[a], ghost.bounds.1[a]]);
+            }
+        }
         out
     }
 }
@@ -283,6 +312,36 @@ impl View {
         let d = (pos - self.rect.center()) / self.scale;
         [self.center[0] + d.x as f64, self.center[1] - d.y as f64]
     }
+}
+
+/// Handles of a frame: which side or corner each drags, and where it is.
+type FrameHandles = Vec<([i8; 2], Pos2)>;
+
+/// The frame that scales a polygon: the box around it and where its eight handles are,
+/// a little out of it so that they stay clear of the vertices.
+fn scale_frame(face: &Face, view: &View, feature: usize) -> Option<(Rect, FrameHandles)> {
+    if !matches!(
+        face.shape.features.get(feature),
+        Some(Feature::Polygon { .. })
+    ) {
+        return None;
+    }
+    let (min, max) = shape::ring_bounds(face.ring(feature)?);
+    let frame = Rect::from_two_pos(view.to_screen(min), view.to_screen(max)).expand(FRAME_GAP);
+    let mut handles = Vec::with_capacity(8);
+    for sx in [-1i8, 0, 1] {
+        for sy in [-1i8, 0, 1] {
+            if sx != 0 || sy != 0 {
+                // On the screen y grows downwards.
+                let at = Pos2::new(
+                    frame.center().x + frame.width() / 2.0 * sx as f32,
+                    frame.center().y - frame.height() / 2.0 * sy as f32,
+                );
+                handles.push(([sx, sy], at));
+            }
+        }
+    }
+    Some((frame, handles))
 }
 
 /// The figure a tool draws from `a` to `b`, if it is big enough to be one.
@@ -429,16 +488,59 @@ impl App {
         let shape = part.shape.clone().unwrap_or_default();
         let outline = shape.outline(su, sv, &|d| solved.eval(d));
         let c = doc.material(part.material).map_or([200; 3], |m| m.color);
+        let axes = other_axes(normal);
+        let mut others = Vec::new();
+        if self.prefs.shape_ghost > 0.01 {
+            let middle = (b.min[normal] + b.max[normal]) / 2.0;
+            let mut far = Vec::new();
+            for (other, o) in self.scene.boxes(doc) {
+                if other == id {
+                    continue;
+                }
+                let origin = [
+                    o.min[axes[0]] - b.min[axes[0]],
+                    o.min[axes[1]] - b.min[axes[1]],
+                ];
+                let size = [o.size()[axes[0]], o.size()[axes[1]]];
+                // Its own outline if it lies the same way; if not, its box.
+                let outline = match self.scene.outlines.get(&other) {
+                    Some((axis, outline)) if *axis == normal => outline.clone(),
+                    _ => Outline::rect(size[0], size[1]),
+                };
+                let place = |q: &Point| [q[0] + origin[0], q[1] + origin[1]];
+                let (points, triangles) = outline.triangulate();
+                let c = doc
+                    .part(other)
+                    .and_then(|p| doc.material(p.material))
+                    .map_or([200; 3], |m| m.color);
+                far.push(((o.min[normal] + o.max[normal]) / 2.0 - middle).abs());
+                others.push(Ghost {
+                    rings: outline
+                        .rings()
+                        .map(|r| r.iter().map(place).collect())
+                        .collect(),
+                    points: points.iter().map(place).collect(),
+                    triangles,
+                    bounds: (origin, [origin[0] + size[0], origin[1] + size[1]]),
+                    color: Color32::from_rgb(c[0], c[1], c[2]),
+                });
+            }
+            let mut order: Vec<usize> = (0..others.len()).collect();
+            order.sort_by(|a, b| far[*b].total_cmp(&far[*a]));
+            let mut slots: Vec<Option<Ghost>> = others.into_iter().map(Some).collect();
+            others = order.into_iter().filter_map(|n| slots[n].take()).collect();
+        }
         Some(Face {
             id,
             name: part.name.clone(),
             su,
             sv,
-            axes: other_axes(normal),
+            axes,
             shape,
             outline,
             solved,
             color: Color32::from_rgb(c[0], c[1], c[2]),
+            others,
         })
     }
 
@@ -515,6 +617,81 @@ impl App {
             ed.selected = selected;
         }
         self.set_shape(face.id, shape, None);
+    }
+
+    /// The figure that is selected.
+    fn shape_selection(&self) -> Option<(Face, usize)> {
+        let face = self.shape_face()?;
+        let f = self.shape_editor.as_ref()?.selected_feature()?;
+        (f < face.shape.features.len()).then_some((face, f))
+    }
+
+    /// Ctrl+C: the selected figure goes to the clipboard, as text (so it can be pasted
+    /// on another part, or in another window) and kept here in case the system loses it.
+    pub(crate) fn shape_copy(&mut self, ctx: &egui::Context) {
+        if let Some((face, f)) = self.shape_selection() {
+            let feature = face.shape.features[f].clone();
+            ctx.copy_text(shape::feature_to_text(&feature));
+            self.shape_clipboard = Some(feature);
+        }
+    }
+
+    /// Ctrl+V: adds the figure of the clipboard (`text`, or the one kept here) under the
+    /// pointer, or a little off where it was copied from.
+    pub(crate) fn shape_paste(&mut self, text: Option<&str>) {
+        let feature = text
+            .and_then(shape::feature_from_text)
+            .or_else(|| self.shape_clipboard.clone());
+        let at = self.shape_editor.as_ref().and_then(|e| e.pointer);
+        if let Some(feature) = feature {
+            self.shape_add(feature, at);
+        }
+    }
+
+    /// Ctrl+D: a copy of the selected figure beside it.
+    pub(crate) fn shape_duplicate(&mut self) {
+        if let Some((face, f)) = self.shape_selection() {
+            self.shape_add(face.shape.features[f].clone(), None);
+        }
+    }
+
+    /// Adds a figure centred at `at` (or a little off its place) and selects it.
+    fn shape_add(&mut self, feature: Feature, at: Option<Point>) {
+        let Some(face) = self.shape_face() else {
+            return;
+        };
+        let mut shape = face.shape.clone();
+        shape.features.push(feature);
+        let n = shape.features.len() - 1;
+        let eval = face.eval();
+        let outline = shape.outline(face.su, face.sv, &eval);
+        let ring = outline.cutters.iter().find(|(i, _)| *i == n);
+        let delta = match (at, ring) {
+            (Some(at), Some((_, ring))) => {
+                let (min, max) = shape::ring_bounds(ring);
+                [
+                    (at[0] - (min[0] + max[0]) / 2.0).round(),
+                    (at[1] - (min[1] + max[1]) / 2.0).round(),
+                ]
+            }
+            _ => COPY_SHIFT,
+        };
+        shape.translate(n, delta, &eval);
+        if let Some(ed) = &mut self.shape_editor {
+            ed.set_tool(ShapeTool::Select);
+            ed.selected = Some(Pick::Feature(n));
+        }
+        self.set_shape(face.id, shape, None);
+    }
+
+    /// R: turns the selected figure a quarter of a turn.
+    pub(crate) fn shape_rotate(&mut self, clockwise: bool) {
+        if let Some((face, f)) = self.shape_selection() {
+            let mut shape = face.shape.clone();
+            if shape.rotate_quarter(f, clockwise, face.su, face.sv, &face.eval()) {
+                self.set_shape(face.id, shape, None);
+            }
+        }
     }
 
     /// Enter: places the next point at the length that was typed, or closes the polygon
@@ -635,6 +812,7 @@ impl App {
                 }
             });
         }
+        ed.pointer = response.hover_pos().map(|pos| view.to_face(pos));
         let hover = self.shape_input(ui, &response, &mut ed, &face, &view, &mut pan);
         if pan {
             let d = response.drag_delta() / ed.scale;
@@ -649,7 +827,8 @@ impl App {
                 center: ed.center,
                 scale: ed.scale,
             };
-            paint(ui, &ed, &face, &view, hover, response.hover_pos());
+            let solid = (self.prefs.shape_ghost, self.prefs.shape_part_opacity);
+            paint(ui, &ed, &face, &view, hover, response.hover_pos(), solid);
             self.length_editor(ui, &mut ed, &face);
         }
         self.shape_editor = Some(ed);
@@ -742,6 +921,13 @@ impl App {
                             }
                             Some(Grab::Handle(f, handle))
                         }
+                        Some(Target::Scale(f, sides)) => {
+                            skip = Some(f);
+                            if let Some(ring) = face.ring(f) {
+                                bounds = shape::ring_bounds(ring);
+                            }
+                            Some(Grab::Scale(f, sides))
+                        }
                         Some(Target::Corner(n)) => {
                             ed.selected = Some(Pick::Corner(n));
                             Some(Grab::Corner(n))
@@ -824,6 +1010,26 @@ impl App {
                         };
                         shape.drag_handle(f, handle, to, face.su, face.sv, &eval);
                     }
+                    Grab::Scale(f, sides) => {
+                        // The handles are a little out of the box they drag.
+                        let gap = (FRAME_GAP / view.scale) as f64;
+                        let mut to = at;
+                        for a in 0..2 {
+                            if sides[a] == 0 {
+                                continue;
+                            }
+                            let raw = at[a] - gap * sides[a] as f64;
+                            to[a] = match shape::snap(raw, &g.targets[a], tolerance) {
+                                Some(line) => {
+                                    ed.guides.push((a, line));
+                                    line
+                                }
+                                None => raw.round(),
+                            };
+                        }
+                        let new = shape::box_drag(g.bounds, sides, to, lock);
+                        shape.resize(f, g.bounds, new, &eval);
+                    }
                     Grab::Corner(n) => shape.drag_corner(n, at, face.su, face.sv),
                     Grab::Guide(n) => {
                         let to = snap_point(&mut ed.guides, &g.targets, tolerance, at);
@@ -876,7 +1082,7 @@ impl App {
                 ShapeTool::Select => {
                     ed.selected = match target_at(ed, face, view, pos) {
                         Some(Target::Handle(f, Handle::Vertex(v), _)) => Some(Pick::Vertex(f, v)),
-                        Some(Target::Handle(f, ..)) => Some(Pick::Feature(f)),
+                        Some(Target::Handle(f, ..) | Target::Scale(f, _)) => Some(Pick::Feature(f)),
                         Some(Target::Corner(n)) => Some(Pick::Corner(n)),
                         Some(Target::Feature(f)) => Some(Pick::Feature(f)),
                         Some(Target::Guide(n)) => Some(Pick::Guide(n)),
@@ -984,8 +1190,21 @@ fn target_at(ed: &ShapeEdit, face: &Face, view: &View, pos: Pos2) -> Option<Targ
             .filter_map(|(h, p)| near(p).map(|d| (d, h, p)))
             // A vertex wins over the middle of a side at the same distance.
             .min_by(|a, b| a.0.total_cmp(&b.0));
-        if let Some((_, h, p)) = best {
-            return Some(Target::Handle(f, h, p));
+        let frame = scale_frame(face, view, f)
+            .into_iter()
+            .flat_map(|(_, handles)| handles)
+            .filter_map(|(sides, at)| {
+                let d = at.distance(pos);
+                (d <= GRAB).then_some((d, sides))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0));
+        match (best, frame) {
+            (Some((d, ..)), Some((far, sides))) if far < d => {
+                return Some(Target::Scale(f, sides));
+            }
+            (Some((_, h, p)), _) => return Some(Target::Handle(f, h, p)),
+            (None, Some((_, sides))) => return Some(Target::Scale(f, sides)),
+            (None, None) => {}
         }
         let label = edge_labels(face, view, f)
             .into_iter()
@@ -1063,7 +1282,8 @@ fn edge_labels(face: &Face, view: &View, feature: usize) -> Vec<(usize, Pos2, St
                 // On the screen y grows downwards.
                 let normal = Vec2::new((d[1] / len) as f32, (d[0] / len) as f32) * outward as f32;
                 let mid = view.to_screen([(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0]);
-                (n, mid + normal * 16.0, measure(len))
+                // Beyond the frame that scales the polygon.
+                (n, mid + normal * (FRAME_GAP + 28.0), measure(len))
             })
         })
         .collect()
@@ -1162,11 +1382,25 @@ fn paint(
     view: &View,
     hover: Option<Target>,
     pointer: Option<Pos2>,
+    (ghost, opacity): (f32, f32),
 ) {
     let p = pal();
     let painter = ui.painter_at(view.rect);
     let screen = |q: &Point| view.to_screen(*q);
     let (su, sv) = (face.su, face.sv);
+
+    // The rest of the furniture behind, as a reference.
+    for other in &face.others {
+        let mut mesh = egui::Mesh::default();
+        let color = other.color.gamma_multiply(ghost.clamp(0.0, 1.0));
+        for q in &other.points {
+            mesh.colored_vertex(screen(q), color);
+        }
+        for tri in &other.triangles {
+            mesh.add_triangle(tri[0] as u32, tri[1] as u32, tri[2] as u32);
+        }
+        painter.add(Paint::mesh(mesh));
+    }
 
     // The rectangle that is cut, then the material and its rings.
     let whole = Rect::from_min_max(screen(&[0.0, sv]), screen(&[su, 0.0]));
@@ -1178,18 +1412,26 @@ fn paint(
     );
     let (points, triangles) = face.outline.triangulate();
     let mut mesh = egui::Mesh::default();
+    let color = face.color.gamma_multiply(opacity.clamp(0.05, 1.0));
     for q in &points {
-        mesh.colored_vertex(screen(q), face.color);
+        mesh.colored_vertex(screen(q), color);
     }
     for tri in &triangles {
         mesh.add_triangle(tri[0] as u32, tri[1] as u32, tri[2] as u32);
     }
     painter.add(Paint::mesh(mesh));
+    // The edges of the other parts stay in sight over the part.
+    let edge = Stroke::new(1.0, p.text_soft.gamma_multiply(0.25 + 0.5 * ghost.min(1.0)));
+    for other in &face.others {
+        for ring in &other.rings {
+            painter.add(Paint::closed_line(ring.iter().map(screen).collect(), edge));
+        }
+    }
 
     // Every figure whole, also where it is outside the part.
     let selected = ed.selected_feature();
     let hovered = match hover {
-        Some(Target::Feature(f) | Target::Handle(f, ..)) => Some(f),
+        Some(Target::Feature(f) | Target::Handle(f, ..) | Target::Scale(f, _)) => Some(f),
         _ => None,
     };
     for (i, ring) in &face.outline.cutters {
@@ -1343,11 +1585,14 @@ fn paint(
                     p.cota,
                 );
             }
-            // A polygon shows the length of every side instead.
-            if !matches!(face.shape.features.get(f), Some(Feature::Polygon { .. })) {
+            // A polygon shows the length of every side instead, but while it is scaled.
+            let polygon = matches!(face.shape.features.get(f), Some(Feature::Polygon { .. }));
+            let scaling = matches!(&ed.gesture, Some(g) if matches!(g.grab, Grab::Scale(..)));
+            if !polygon || scaling {
+                let up = if polygon { FRAME_GAP + 14.0 } else { 12.0 };
                 label(
                     &painter,
-                    screen(&[mid[0], max[1]]) - Vec2::new(0.0, 12.0),
+                    screen(&[mid[0], max[1]]) - Vec2::new(0.0, up),
                     Align2::CENTER_BOTTOM,
                     format!(
                         "{} × {}",
@@ -1355,6 +1600,31 @@ fn paint(
                         measure(max[1] - min[1])
                     ),
                     p.cota,
+                );
+            }
+        }
+        if ed.tool == ShapeTool::Select
+            && let Some((frame, handles)) = scale_frame(face, view, f)
+        {
+            let line = Stroke::new(1.0, p.accent.gamma_multiply(0.7));
+            let corners = [
+                frame.left_top(),
+                frame.right_top(),
+                frame.right_bottom(),
+                frame.left_bottom(),
+                frame.left_top(),
+            ];
+            painter.extend(Paint::dashed_line(&corners, line, 4.0, 3.0));
+            for (sides, at) in handles {
+                let hot = hover == Some(Target::Scale(f, sides))
+                    || matches!(&ed.gesture, Some(g) if matches!(g.grab, Grab::Scale(_, s) if s == sides));
+                let fill = if hot { p.accent } else { p.window };
+                painter.rect(
+                    Rect::from_center_size(at, Vec2::splat(7.0)),
+                    0.0,
+                    fill,
+                    Stroke::new(1.0, p.accent),
+                    egui::StrokeKind::Middle,
                 );
             }
         }
